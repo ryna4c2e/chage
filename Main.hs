@@ -25,3 +25,4 @@ main = do prog <- readProgram "input.txt"
           withFile "out.b32" WriteMode
                        (\h -> hAssembleOut h prog)
           
+

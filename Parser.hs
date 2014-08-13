@@ -18,8 +18,12 @@ import Inst
 
 blanks = many (oneOf " \t")
 
+parseHex :: Parser Int
+parseHex = read <$> ("0x" ++) <$> many1 (oneOf (['0'..'9'] ++ "abcdef" ++ "ABCDEF"))
+
 parseDecimal :: Parser Int
 parseDecimal = read <$> many1 (oneOf ['0'..'9'])
+
 
 parseProgram :: Parser Program
 parseProgram = do
@@ -27,14 +31,6 @@ parseProgram = do
   blanks
   eof
   return $ Program $ catMaybes maybeList
-
-
--- seqSepBy1 (x:[]) by = do n <- x
---                          return x
--- seqSepBy1 (x:xs) by = do n <- x
---                          by
---                          ns <- seqSepBy1 xs
---                          return (n:ns)
 
 
 parseLine :: Parser (Maybe Inst)
@@ -52,26 +48,50 @@ parseInst = do
     Just p  -> p
 
     where
-      db = [("nop", return NOP)
-           ,("limm", limm)
-           ,("or" , buildArith OR)
-           ,("xor", buildArith XOR)
-           ,("and", buildArith AND)
---           ,("sbx", buildArith ADD),
-           ,("add", buildArith ADD)]
+      db = [("nop",   return NOP)
+           ,("limm",  limm)
+           ,("lb", lb)
+           ,("plimm", plimm)
+           ,("or",    buildArith OR)
+           ,("xor",   buildArith XOR)
+           ,("and",   buildArith AND)
+           ,("sbx",   buildArith SBX)
+           ,("add",   buildArith ADD)
+           ,("sub",   buildArith SUB)
+           ,("mul",   buildArith MUL)
+           ,("shl",   buildArith SHL)
+           ,("sar",   buildArith SAR)
+           ,("div",   buildArith DIV)
+           ,("mod",   buildArith MOD)
 
-      limm = do bit <- parseBitSpec
-                r   <- parseReg
-                imm <- parseImm
-                return $ LIMM bit r imm
+           ,("cmpe",  buildComp CMPE)
+           ,("cmpne", buildComp CMPNE)
+           ,("cmpl",  buildComp CMPL)
+           ,("cmpge", buildComp CMPGE)
+           ,("cmple", buildComp CMPLE)
+           ,("cmpg",  buildComp CMPG)
+           ,("tstz",  buildComp TSTZ)
+           ,("tstnz", buildComp TSTNZ)
 
+           ]
+
+      limm  = LIMM  <$> parseBitSpec <*> parseReg <*> parseImm
+      lb    = LB    <$> parseLabelOpt <*> parseLabel
+      plimm = PLIMM <$> parsePReg <*> parseLabel
+             
       buildArith op = do bit <- parseBitSpec
                          r1  <- parseReg <?> "first register"
                          r2  <- parseReg <?> "second register"
                          r3  <- parseReg <?> "third register"
                          return $ op bit r1 r2 r3
 
-  
+      buildComp op  = do bit0 <- parseBitSpec
+                         bit1 <- parseBitSpec
+                         r0  <- parseReg <?> "first register"
+                         r1  <- parseReg <?> "second register"
+                         r2  <- parseReg <?> "third register"
+                         return $ op bit0 bit1 r0 r1 r2
+
 
 parseBitSpec :: Parser BitSpec
 parseBitSpec = do {
@@ -85,7 +105,7 @@ parseReg :: Parser Reg
 parseReg = do
   blanks
   oneOf "rR"
-  n <- parseDecimal
+  n <- parseHex
   return $ Reg n
 
 
@@ -97,3 +117,9 @@ parseImm = do {
            } <?> "immediate value"
 
 
+
+test = do
+  res <- parseFromFile parseProgram "input.txt"
+  case res of
+    Right res -> mapM_ print (instructions res)
+    Left err  -> print err
