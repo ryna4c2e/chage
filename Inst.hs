@@ -1,17 +1,29 @@
 module Inst where
 
-newtype Reg     = Reg Int deriving (Show, Eq)
-newtype PReg    = PReg Int deriving (Show, Eq)
-newtype BitSpec = BitSpec Int deriving (Show, Eq)
-newtype Imm     = Imm Int deriving (Show, Eq)
-newtype Label   = Label Int deriving (Show, Eq)
-newtype LabelOpt = LabelOpt Int deriving (Show, Eq)
+import Data.Word
+
+newtype Reg     = Reg Word32 deriving (Show, Eq)
+newtype PReg    = PReg Word32 deriving (Show, Eq)
+newtype BitSpec = BitSpec Word32 deriving (Show, Eq)
+newtype Imm     = Imm Word32 deriving (Show, Eq)
+newtype Label   = Label Word32 deriving (Show, Eq)
+newtype LabelOpt = LabelOpt Word32 deriving (Show, Eq)
 
 data Inst = NOP
           | LIMM BitSpec Reg Imm
 
           | LB    LabelOpt Label
+
           | PLIMM PReg Label
+          | PCP   PReg PReg
+
+            -- Condition
+          | CND   Reg
+
+          | LMEM0 BitSpec Reg PReg
+          | SMEM0 BitSpec Reg PReg
+
+          | PADD BitSpec PReg PReg Reg
 
             -- Arithmetic & Logical Operators
           | OR  BitSpec Reg Reg Reg
@@ -35,6 +47,8 @@ data Inst = NOP
           | CMPG  BitSpec BitSpec Reg Reg Reg
           | TSTZ  BitSpec BitSpec Reg Reg Reg
           | TSTNZ BitSpec BitSpec Reg Reg Reg
+
+          | DATA  [Word32]
 
             deriving (Show, Eq)
 

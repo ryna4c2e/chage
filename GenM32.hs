@@ -2,6 +2,7 @@ module GenM32 where
 
 import Data.Word
 import Data.Monoid
+import Data.List
 
 import System.IO
 
@@ -34,7 +35,18 @@ instance EncodeM32 BitSpec where
 instance EncodeM32 Imm where
     toM32 (Imm r) = fromInteger (toInteger r)
 
+instance EncodeM32 PReg where
+    toM32 (PReg p) = fromInteger (toInteger p) + offsetSignature
+
+instance EncodeM32 Label where
+    toM32 (Label l) = fromInteger (toInteger l) + offsetSignature
+
+instance EncodeM32 LabelOpt where
+    toM32 (LabelOpt o) = fromInteger (toInteger o) + offsetSignature
+
+
 instToM32 n = offsetSignature + n
+sInt32Type = instToM32 0x06
 
 
 assemble :: Program -> [Word32]
@@ -46,6 +58,39 @@ assemble prog = concatMap encode' (instructions prog)
                                   toM32 imm,
                                   toM32 r,
                                   toM32 bit]
+      encode' (LB   opt label) = [instToM32 0x01,
+                                  toM32 label,
+                                  toM32 opt]
+      encode' (PLIMM p label) = [instToM32 0x03,
+                                 toM32 label,
+                                 toM32 p]
+      encode' (PCP   p0 p1)   = [instToM32 0x1e,
+                                 toM32 p1,
+                                 toM32 p0]
+      encode' (CND  reg) = [instToM32 0x04, toM32 reg]
+
+      encode' (LMEM0 bit r p) = [instToM32 0x08,
+                                 toM32 p,
+                                 sInt32Type,
+                                 instToM32 0,
+                                 toM32 r,
+                                 toM32 bit]
+-- 76000009	r	bit	p	typ	76000000
+      encode' (SMEM0 bit r p) = [instToM32 0x09,
+                                 toM32 r,
+                                 toM32 bit,
+                                 toM32 p,
+                                 sInt32Type,
+                                 instToM32 0]
+
+-- 7600000E	p1	typ	r	bit	p0	
+      encode' (PADD bit p0 p1 r) = [instToM32 0x0e,
+                                    toM32 p1,
+                                    sInt32Type,
+                                    toM32 r,
+                                    toM32 bit,
+                                    toM32 p0]
+
       encode' (OR   bit r0 r1 r2) = genArith 0x10 bit r0 r1 r2
       encode' (XOR  bit r0 r1 r2) = genArith 0x11 bit r0 r1 r2
       encode' (AND  bit r0 r1 r2) = genArith 0x12 bit r0 r1 r2
@@ -67,6 +112,11 @@ assemble prog = concatMap encode' (instructions prog)
       encode' (TSTZ  bit0 bit1 r0 r1 r2) = genComp 0x26 bit0 bit1 r0 r1 r2
       encode' (TSTNZ bit0 bit1 r0 r1 r2) = genComp 0x27 bit0 bit1 r0 r1 r2
 
+
+      encode' (DATA ws) = [instToM32 0x2e,
+                           sInt32Type,
+                           instToM32 (genericLength ws)
+                           ] ++ ws
 
       genArith code bit r0 r1 r2 = [instToM32 code,
                                     toM32 r1,
