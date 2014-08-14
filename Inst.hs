@@ -50,6 +50,8 @@ data Inst = NOP
 
           | DATA  [Word32]
 
+          | BREAK
+
             deriving (Show, Eq)
 
 data Program = Program { instructions :: [Inst] } deriving (Show, Eq)

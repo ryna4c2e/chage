@@ -113,6 +113,8 @@ assemble prog = concatMap encode' (instructions prog)
       encode' (TSTNZ bit0 bit1 r0 r1 r2) = genComp 0x27 bit0 bit1 r0 r1 r2
 
 
+      encode' BREAK = [0x760000FE, 0x760001FF, 0x76000000]
+
       encode' (DATA ws) = [instToM32 0x2e,
                            sInt32Type,
                            instToM32 (genericLength ws)
