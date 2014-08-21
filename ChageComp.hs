@@ -136,7 +136,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
 -}
       compSimpleExprTo (Load  ptr v) outR = do p <- lookupPtr ptr
                                                c2 <- compIntValTo v tmp1
-                                               return $ c2 ++  [PADD spec32 p3f p tmp1, LMEM0 spec32 outR p3f]
+                                               return $ c2 ++  [PADD spec32 p3e p tmp1, LMEM0 spec32 outR p3e]
 
       -- 簡単な算術命令について、compSimpleExprToをする。
       compArithmetic cons v1 v2 to = do c1 <- compIntValTo v1 tmp1
