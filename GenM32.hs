@@ -7,7 +7,7 @@ import Data.List
 import System.IO
 
 import qualified Data.ByteString as B
-import Data.ByteString.Builder
+import Data.ByteString.Lazy.Builder
 
 import Inst
 
