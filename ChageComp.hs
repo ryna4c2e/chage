@@ -1,3 +1,8 @@
+-- このソースコードは、次の記事を信頼して書かれました．
+-- http://osecpu.osask.jp/wiki/?page0104
+-- http://osecpu.osask.jp/wiki/?page0092
+
+
 module ChageComp where
 
 import Data.Word
@@ -9,29 +14,33 @@ import Inst
 import AST
 
 
---import 
 
-
-userRegCount = 0x30
-
-data CompileState = CS { registers :: Word32,
-                         labels :: Word32,
-                         ptrRegisters :: Word32,
-                         intVars :: [(IntVar, Reg)],
-                         ptrVars :: [(PtrVar, PReg)]
+-- コンパイル中に保持しておくべき情報．内部的に用いられるのみである．
+data CompileState = CS { registers :: Word32, -- 使用した整数レジスタの数
+                         labels :: Word32, -- 導入したラベルの数
+                         ptrRegisters :: Word32, -- 使用したポインタレジスタの数
+                         intVars :: [(IntVar, Reg)],　-- 変数とレジスタの対応
+                         ptrVars :: [(PtrVar, PReg)] -- ポインタ変数とレジスタの対応
                        }
 
+-- 変数として確保できるレジスタの数の上限. [R00 ~ R27]
+localRegisterCount = 0x27
+
+-- テンポラリレジスタとして．[R28 ~ R2B]
 tmp1 = Reg 0x3A
 tmp2 = Reg 0x3B
 
-
+-- 32bit指定のやつ．
 spec32 = BitSpec 32
+
+-- ポインタレジスタを使うとして，
 p3f = PReg 0x3F
 p30 = PReg 0x30
 p3e = PReg 0x3E
 p2f = PReg 0x2F
 
-jumpOnly = LabelOpt 0
+-- ラベルには二種類ある．ジャンプするためのラベルと，読み書きするためのラベルだ．
+jumpOnly  = LabelOpt 0
 readWrite = LabelOpt 1
 
 
@@ -103,11 +112,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
                                                           LB  readWrite lb]
       compSentence (Break) = return [BREAK]
 
--- lbstk2(0,1); PLIMM(P30, lbstk1(0,0)); PJMP(preg); ELB(lbstk1(0,0)); lbstk3(0)          
--- #define api_drawPoint(mod, c, x, y)	REM01(); R30=0x0002; R31=mod; R32=c; R33=x; R34=y; PCALL(P2F) 
--- #define api_sleep(opt, msec)		REM01(); R30=0x0009; R31=opt; R32=msec; PCALL(P2F)
--- #define api_openWin(xsiz, ysiz)	REM01(); R30=0x0010; R31=0; R32=0; R33=xsiz; R34=ysiz; PCALL(P2F)
--- #define api_fillOval(mod, c, xsiz, ysiz, x0, y0)	REM01(); R30=0x0005; R31=mod;      R32=c; R33=xsiz; R34=ysiz; R35=x0; R36=y0; PCALL(P2F) 
+
 
       apiList = [("api_drawPoint", (Imm 0x0002, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34])),
                  ("api_sleep",     (Imm 0x0009, [Reg 0x31, Reg 0x32])),
@@ -128,12 +133,6 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
       compSimpleExprTo (Cmpg  v1 v2) outR = compCompare CMPG  v1 v2 outR
       compSimpleExprTo (Cmpge v1 v2) outR = compCompare CMPGE v1 v2 outR
 
-{-
-#define PALMEM(bit, reg0, typ32, preg0, reg1, mclen)	PADD(32, P3F, typ32, preg0, reg1); LMEM(bit, reg0, typ32, P3F, mclen)
-#define PASMEM(bit, reg0, typ32, preg0, reg1, mclen)	PADD(32, P3F, typ32, preg0, reg1); SMEM(bit, reg0, typ32, P3F, mclen)
-#define PALMEM0(bit, reg0, typ32, preg0, reg1)		PALMEM(bit, reg0, typ32, preg0, reg1, 0)
-#define PASMEM0(bit, reg0, typ32, preg0, reg1)		PASMEM(bit, reg0, typ32, preg0, reg1, 0)
--}
       compSimpleExprTo (Load  ptr v) outR = do p <- lookupPtr ptr
                                                c2 <- compIntValTo v tmp1
                                                return $ c2 ++  [PADD spec32 p3e p tmp1, LMEM0 spec32 outR p3e]
@@ -151,23 +150,27 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
       compIntValTo (GetVar v) reg = do varReg <- lookupVar v
                                        return [OR spec32 reg varReg varReg]
 
+      -- 整数の変数を，シンボルテーブルから引っ張ってくる．
       lookupVar var@(IntVar s) = do
         st <- get
         case lookup var (intVars st) of
           Nothing -> error $ "undefined variable: " ++ s
           Just rg -> return rg
 
+      -- ポインタ変数を，シンボルテーブルから引っ張ってくる．
       lookupPtr ptr@(PtrVar s) = do
         st <- get
         case lookup ptr (ptrVars st) of
           Nothing -> error $ "undefined pointer variable: " ++ s
           Just pr -> return pr
 
+
+
       defineVar var@(IntVar s) = do
         st <- get
         when (lookup var (intVars st) /= Nothing) (error $ "var already defined" ++ s)
         let regCnt = registers st
-        when (regCnt >= userRegCount) (error $ "too many variables")
+        when (regCnt >= localRegisterCount) (error $ "too many variables")
         let regName = Reg regCnt
         put (st { registers = regCnt + 1, intVars = (var, regName):intVars st })
         return $ regName
@@ -176,7 +179,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
         st <- get
         when (lookup ptr (ptrVars st) /= Nothing) (error $ "var already defined" ++ s)
         let regCnt = ptrRegisters st
-        when (regCnt >= userRegCount) (error $ "too many ptr vars")
+        when (regCnt >= localRegisterCount) (error $ "too many ptr vars")
         let regName = PReg regCnt
         put (st { ptrRegisters = regCnt + 1, ptrVars = (ptr, regName):ptrVars st })
         return $ regName
