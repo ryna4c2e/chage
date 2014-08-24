@@ -190,3 +190,4 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
         let label = labels st
         put (st { labels = label + 1 })
         return $ Label label
+

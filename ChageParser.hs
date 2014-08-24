@@ -142,3 +142,14 @@ parseBreak = do reserved tok "debug" >> semi tok >> return Break
 
 
 test = parseFromFile parseAST "chag.txt"
+
+
+parseChageFromFile :: FilePath -> IO AST
+parseChageFromFile fname = do res <- parseFromFile parseChage fname
+                              case res of
+                               (Right ast) -> return ast
+                               (Left err)  -> error (show err)
+                   
+
+
+                       
