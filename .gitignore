@@ -10,3 +10,8 @@ Main
 
 # Fuckintosh
 .DS_Store
+
+
+# Cabal sandbox
+.cabal-sandbox
+dist
