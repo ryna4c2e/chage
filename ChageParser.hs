@@ -42,34 +42,30 @@ parseSimpleExpr = parseLoad <|>
                           v2 <- parseValue
                           return $ op v1 v2) <|> return (Expr v1)
     where
+      parseLoad = Load <$ reservedOp tok "$" <*> parsePtrVar <*> brackets tok parseValue
+
       parseOp = do str <- operator tok
                    case lookup str db of
                      Nothing -> unexpected str
                      Just op -> return op
 
           where
-            db = [("+", Add),
-                  ("*", Mul),
-                  ("==", Cmpe),
-                  ("!=", Cmpne),
-                  (">", Cmpg),
-                  ("<", Cmpl),
-                  (">=", Cmpge),
-                  ("<=", Cmple)
-                  ]
-      parseLoad = do reservedOp tok "$"
-                     p <- parsePtrVar
-                     ix <- brackets tok parseValue
-                     return $ Load p ix
+            db = [
+                   ("+", Add)
+                 , ("*", Mul)
+                 , ("==", Cmpe)
+                 , ("!=", Cmpne)
+                 , (">", Cmpg)
+                 , ("<", Cmpl)
+                 , (">=", Cmpge)
+                 , ("<=", Cmple)
+                 ]
 
 parseChage :: Parser AST
-parseChage = do ast <- parseAST 
-                spaces
-                eof
-                return ast
+parseChage = parseAST <* spaces <* eof
 
 parseAST :: Parser AST
-parseAST = AST <$> many (whiteSpace tok >> parseSentence)
+parseAST = AST <$> many (whiteSpace tok *> parseSentence)
 
 parseSentence = try parseAssign <|>
                 try parseIf <|>
@@ -82,66 +78,44 @@ parseSentence = try parseAssign <|>
                 try parseBreak <|>
                 parseData
 
-parseAssign = do var <- parseIntVar
-                 reservedOp tok "="
-                 val <- parseSimpleExpr
-                 semi tok
-                 return $ Assign var val                        
+parseAssign    = Assign <$>  parseIntVar
+                        <*   reservedOp tok "="
+                        <*>  parseSimpleExpr
+                        <*   semi tok
 
-parseIf = do reserved tok "if"
-             cond <- parseSimpleExpr
-             csqt <- braces tok parseAST
-             reserved tok "else"
-             altn <- braces tok parseAST
-             return (If cond csqt altn)
+parseIf        = If     <$   reserved tok "if"
+                        <*>  parseSimpleExpr
+                        <*>  braces tok parseAST 
+                        <*   reserved tok "else" 
+                        <*>  braces tok parseAST
 
-parseWhile = do reserved tok "while"
-                cond <- parseSimpleExpr
-                body <- braces tok parseAST
-                return (While cond body)
+parseWhile     = While   <$  reserved tok "while" <*> parseSimpleExpr <*> braces tok parseAST
+parseDeclInt   = DeclInt <$  reserved tok "int" <*> parseIntVar <* semi tok
+parseDeclPtr   = DeclPtr <$  reserved tok "ptr" <*> parsePtrVar <* semi tok
+parsePCopy     = PCopy   <$> parsePtrVar <* reservedOp tok ":=" <*> parsePtrVar <* semi tok
+parseStore     = Store   <$  reservedOp tok "$"
+                         <*> parsePtrVar
+                         <*> brackets tok (parseValue)
+                         <*  reservedOp tok "="
+                         <*> parseSimpleExpr
+                         <*  semi tok
 
-parseDeclInt = do reserved tok "int"
-                  var <- parseIntVar
-                  semi tok
-                  return (DeclInt var)
+parseCall      = Call    <$> identifier tok
+                         <*> parens tok (commaSep1 tok parseSimpleExpr)
+                         <*  semi tok
 
-parseDeclPtr = do reserved tok "ptr"
-                  var <- parsePtrVar
-                  semi tok
-                  return (DeclPtr var)
+parseData      = (\pvar words -> Data pvar (map fromInteger words))
+               <$  reserved tok "data" 
+               <*> parsePtrVar
+               <*  reservedOp tok "="
+               <*> brackets tok (commaSep1 tok (integer tok))
+               <*  semi tok
 
-
-parsePCopy = do p0 <- parsePtrVar
-                reservedOp tok ":="
-                p1 <- parsePtrVar
-                semi tok
-                return (PCopy p0 p1)
-
-parseStore = do reservedOp tok "$"
-                p <- parsePtrVar
-                ix <- brackets tok (parseValue)
-                reservedOp tok "="
-                expr <- parseSimpleExpr
-                semi tok
-                return (Store p ix expr)
-
-parseCall = do func <- identifier tok
-               args <- parens tok (commaSep1 tok parseSimpleExpr)
-               semi tok;
-
-               return (Call func args)
-
-parseData = do reserved tok "data"
-               pvar <- parsePtrVar
-               reservedOp tok "="
-               words <- brackets tok (commaSep1 tok (integer tok))
-               semi tok
-               return (Data pvar (map fromInteger words))
-
-parseBreak = do reserved tok "debug" >> semi tok >> return Break
+parseBreak = Break <$ reserved tok "debug" <* semi tok
 
 
-test = parseFromFile parseAST "chag.txt"
+
+test = parseFromFile parseAST "test.chag"
 
 
 parseChageFromFile :: FilePath -> IO AST
