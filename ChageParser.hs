@@ -85,9 +85,8 @@ parseAssign    = Assign <$>  parseIntVar
 
 parseIf        = If     <$   reserved tok "if"
                         <*>  parseSimpleExpr
-                        <*>  braces tok parseAST 
-                        <*   reserved tok "else" 
                         <*>  braces tok parseAST
+                        <*>  option (AST []) (reserved tok "else" *> braces tok parseAST)
 
 parseWhile     = While   <$  reserved tok "while" <*> parseSimpleExpr <*> braces tok parseAST
 parseDeclInt   = DeclInt <$  reserved tok "int" <*> parseIntVar <* semi tok
