@@ -22,6 +22,11 @@ data IntValue = Const Word32
 data SimpleExpr = Add IntValue IntValue
                 | Mul IntValue IntValue
 
+                | And IntValue IntValue
+                | Xor IntValue IntValue
+                | Or  IntValue IntValue
+
+
                 | Cmpe  IntValue IntValue
                 | Cmpne IntValue IntValue
 
