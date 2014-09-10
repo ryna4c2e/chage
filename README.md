@@ -3,15 +3,15 @@ A simple language designed for [OSECPU-VM](http://osecpu.osask.jp/wiki/).
 
 # ビルドと実行
 1. [Haskell Platform](https://www.haskell.org/platform/)をインストールします．
-2. `cabal build`でとりあえず，dist/build/chage/chage に実行ファイルができます（よくわかっていない）
-3. chage input.chag を実行すると，out.b32というb32形式のOSECPU-VMバイナリが生成されます．
+2. `cabal build`でとりあえず，`dist/build/chage/chage` に実行ファイルができます（よくわかっていない）
+3. `chage input.chag` を実行すると，`out.b32`という(b32形式)[http://osecpu.osask.jp/wiki/?page0097]のOSECPU-VMバイナリが生成されます．
 
 # 文法
 ## 基本
 一つのファイルに，上から順番に文を書くと実行されます．
 拡張子は.chagでお願いします．
 サンプルコードを示すので，悟って下さい．
-あと，文法はだいたい[Rust](www.rust-lang.org)のパクリです．だいたいみんな同じようなことを考えるということで...
+あと，文法はだいたい[Rust](http://www.rust-lang.org)のパクリです．だいたいみんな同じようなことを考えるということで...
 大体の文法は，サンプルコードを用意したので以下を参照ください．
 あと，仕様はコロコロ変わります．
 
