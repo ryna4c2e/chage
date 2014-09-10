@@ -17,7 +17,7 @@ chageStyle = javaStyle {
                opStart = oneOf "!&*+./<=>?@\\^|-~{}",
                opLetter = oneOf "!&*+./<=>?@\\^|-~",
                reservedNames = ["if", "while", "int", "else"],
-               reservedOpNames = ["+", "-", "*", "==", "!=", ">=", "<=", ">", "<", ":=", "$"]
+               reservedOpNames = ["+", "-", "*", "<<", ">>", "&", "|", "^", "==", "!=", ">=", "<=", ">", "<", ":=", "$"]
              }
 
 
@@ -53,6 +53,9 @@ parseSimpleExpr = parseLoad <|>
             db = [
                    ("+", Add)
                  , ("*", Mul)
+                 , ("&", And)
+                 , ("^", Xor)
+                 , ("|", Or)
                  , ("==", Cmpe)
                  , ("!=", Cmpne)
                  , (">", Cmpg)

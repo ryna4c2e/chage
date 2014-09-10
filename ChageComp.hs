@@ -126,6 +126,10 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
       compSimpleExprTo (Add v1 v2) outR = compArithmetic ADD v1 v2 outR
       compSimpleExprTo (Mul v1 v2) outR = compArithmetic MUL v1 v2 outR
 
+      compSimpleExprTo (And v1 v2) outR = compArithmetic AND v1 v2 outR
+      compSimpleExprTo (Xor v1 v2) outR = compArithmetic XOR v1 v2 outR
+      compSimpleExprTo (Or  v1 v2) outR = compArithmetic OR  v1 v2 outR
+
       compSimpleExprTo (Cmpe  v1 v2) outR = compCompare CMPE  v1 v2 outR
       compSimpleExprTo (Cmpne v1 v2) outR = compCompare CMPNE v1 v2 outR
       compSimpleExprTo (Cmpl  v1 v2) outR = compCompare CMPL  v1 v2 outR
