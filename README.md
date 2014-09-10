@@ -4,7 +4,7 @@ A simple language designed for [OSECPU-VM](http://osecpu.osask.jp/wiki/).
 # ビルドと実行
 1. [Haskell Platform](https://www.haskell.org/platform/)をインストールします．
 2. `cabal build`でとりあえず，`dist/build/chage/chage` に実行ファイルができます（よくわかっていない）
-3. `chage input.chag` を実行すると，`out.b32`という(b32形式)[http://osecpu.osask.jp/wiki/?page0097]のOSECPU-VMバイナリが生成されます．
+3. `chage input.chag` を実行すると，`out.b32`という[b32形式](http://osecpu.osask.jp/wiki/?page0097) のOSECPU-VMバイナリが生成されます．
 
 # 文法
 ## 基本
