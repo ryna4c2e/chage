@@ -3,9 +3,13 @@
 -- http://osecpu.osask.jp/wiki/?page0092
 
 
+-- 変数のレジスタ割当は，レキシカルスコープのように，ある時点で使用されている変数を管理すれば良い．
+-- ラベルの割当は，プログラム中でユニークであるべきなので，コンパイル中全体で管理する．
+
 module ChageComp where
 
 import Data.Word
+import Data.List (genericLength)
 import Control.Monad.State
 import Control.Monad
 
@@ -14,13 +18,37 @@ import Inst
 import AST
 
 
+-- 変数とレジスタの割当関係を管理する．
+data Frame = Frame { intVars :: [(IntVar, Reg)]
+                   , ptrVars :: [(PtrVar, PReg)]
+                   }
+
+emptyFrame :: Frame
+emptyFrame = Frame [] []
+
+
+-- めんどくさいので略したが，変数の数の上限ではじくエラー処理をするべきだ．
+defineIntVar :: Frame -> IntVar -> (Frame, Reg)
+defineIntVar frame v = let vars = intVars frame
+                           reg  = Reg (genericLength vars)
+                       in (frame { intVars = (v, reg) : vars }, reg)
+
+definePtrVar :: Frame -> PtrVar -> (Frame, PReg)
+definePtrVar frame v = let vars = ptrVars frame
+                           reg  = PReg (genericLength vars)
+                       in (frame { ptrVars = (v, reg) : vars }, reg)
+
+
+lookupIntVar :: Frame -> IntVar -> Maybe Reg
+lookupIntVar frame v = lookup v (intVars frame)
+
+lookupPtrVar :: Frame -> PtrVar -> Maybe PReg
+lookupPtrVar frame v = lookup v (ptrVars frame)
+
 
 -- コンパイル中に保持しておくべき情報．内部的に用いられるのみである．
-data CompileState = CS { registers :: Word32, -- 使用した整数レジスタの数
-                         labels :: Word32, -- 導入したラベルの数
-                         ptrRegisters :: Word32, -- 使用したポインタレジスタの数
-                         intVars :: [(IntVar, Reg)],　-- 変数とレジスタの対応
-                         ptrVars :: [(PtrVar, PReg)] -- ポインタ変数とレジスタの対応
+data CompileState = CS { labels :: Word32, -- 導入したラベルの数
+                         frame :: Frame
                        }
 
 -- 変数として確保できるレジスタの数の上限. [R00 ~ R27]
@@ -45,7 +73,7 @@ readWrite = LabelOpt 1
 
 
 compile :: AST -> Program
-compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
+compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
     where
       compAST :: AST -> State CompileState [Inst]
       compAST (AST ss) = do words <- mapM compSentence ss
@@ -71,18 +99,18 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
                                          lbl <- genLabel
                                          return $ [PLIMM pReg lbl, LB readWrite lbl, DATA ws]
 
-      compSentence (Assign var expr) = do c1 <- compSimpleExprTo expr tmp1 
+      compSentence (Assign var expr) = do c1 <- compSimpleExprTo expr tmp1
                                           dst <- lookupVar var
                                           return $ c1 ++ [OR spec32 dst tmp1 tmp1]
 
       compSentence (If cond cnsq altn) =
           do c1 <- compSimpleExprTo cond tmp1
-             c2 <- compAST cnsq
-             c3 <- compAST altn
+             c2 <- extendScope (compAST cnsq)
+             c3 <- extendScope (compAST altn)
 
              ifLabel <- genLabel
              endLabel  <- genLabel
-             
+
              return $ c1 ++ [LIMM spec32 tmp2 (Imm 1), XOR spec32 tmp1 tmp1 tmp2,
                              CND tmp1, PLIMM p3f ifLabel] ++
                         c2 ++ [PLIMM p3f endLabel, LB jumpOnly ifLabel] ++
@@ -90,7 +118,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
 
       compSentence (While cond body) =
           do c1 <- compSimpleExprTo cond tmp1
-             c2 <- compAST body
+             c2 <- extendScope (compAST body)
 
              startLabel <- genLabel
              endLabel <- genLabel
@@ -101,7 +129,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
                           c2 ++ [PLIMM p3f startLabel, LB jumpOnly endLabel]
 
       compSentence (Call func args) =
-          case lookup func apiList of 
+          case lookup func apiList of
             Nothing -> error $ "function not found: " ++ func
             Just (inst, regs) -> do s <- sequence (zipWith compSimpleExprTo args regs)
                                     -- 逐次割り当てしておく。
@@ -118,7 +146,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
                  ("api_sleep",     (Imm 0x0009, [Reg 0x31, Reg 0x32])),
                  ("api_openWin",   (Imm 0x0010, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34])),
                  ("api_fillOval",  (Imm 0x0005, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34, Reg 0x35, Reg 0x36]))]
-       
+
 
       -- simplexpr を、指定されたレジスタに計算していれる命令列を出す。
       compSimpleExprTo :: SimpleExpr -> Reg -> State CompileState [Inst]
@@ -154,39 +182,40 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
       compIntValTo (GetVar v) reg = do varReg <- lookupVar v
                                        return [OR spec32 reg varReg varReg]
 
+      
+      extendScope :: State CompileState a -> State CompileState a
+      extendScope m = do
+        st <- get
+        ret <- m
+        modify $ \newSt -> newSt { frame = frame st }
+        return ret
+
       -- 整数の変数を，シンボルテーブルから引っ張ってくる．
       lookupVar var@(IntVar s) = do
         st <- get
-        case lookup var (intVars st) of
+        case lookupIntVar (frame st) var of
           Nothing -> error $ "undefined variable: " ++ s
           Just rg -> return rg
 
       -- ポインタ変数を，シンボルテーブルから引っ張ってくる．
+      lookupPtr :: PtrVar -> State CompileState PReg
       lookupPtr ptr@(PtrVar s) = do
         st <- get
-        case lookup ptr (ptrVars st) of
+        case lookupPtrVar (frame st) ptr of
           Nothing -> error $ "undefined pointer variable: " ++ s
           Just pr -> return pr
 
-
-
       defineVar var@(IntVar s) = do
         st <- get
-        when (lookup var (intVars st) /= Nothing) (error $ "var already defined" ++ s)
-        let regCnt = registers st
-        when (regCnt >= localRegisterCount) (error $ "too many variables")
-        let regName = Reg regCnt
-        put (st { registers = regCnt + 1, intVars = (var, regName):intVars st })
-        return $ regName
+        let (newFrame, reg) = frame st `defineIntVar` var
+        put (st { frame = newFrame })
+        return $ reg
 
       definePtr ptr@(PtrVar s) = do
         st <- get
-        when (lookup ptr (ptrVars st) /= Nothing) (error $ "var already defined" ++ s)
-        let regCnt = ptrRegisters st
-        when (regCnt >= localRegisterCount) (error $ "too many ptr vars")
-        let regName = PReg regCnt
-        put (st { ptrRegisters = regCnt + 1, ptrVars = (ptr, regName):ptrVars st })
-        return $ regName
+        let (newFrame, reg) = frame st `definePtrVar` ptr
+        put (st { frame = newFrame })
+        return $ reg
 
       genLabel = do
         st <- get
@@ -194,4 +223,3 @@ compile ast = Program $ evalState (compAST ast) (CS 0 0 1 [] [])
         let label = labels st
         put (st { labels = label + 1 })
         return $ Label label
-
