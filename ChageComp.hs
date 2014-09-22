@@ -88,9 +88,8 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
                                          lbl <- genLabel
                                          return $ [PLIMM pReg lbl, LB readWrite lbl, DATA ws]
 
-      compSentence (Assign var expr) = do c1 <- compSimpleExprTo expr tmp1
-                                          dst <- lookupVar var
-                                          return $ c1 ++ [OR spec32 dst tmp1 tmp1]
+      compSentence (Assign var expr) = do dst <- lookupVar var
+                                          compSimpleExprTo expr dst
 
       compSentence (If cond cnsq altn) =
           do c1 <- compSimpleExprTo cond tmp1
@@ -159,6 +158,12 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
                                                return $ c2 ++  [PADD spec32 p3e p tmp1, LMEM0 spec32 outR p3e]
 
       -- 簡単な算術命令について、compSimpleExprToをする。
+      -- レジスタ同士の演算だと，すぐにできるため簡略化
+      compArithmetic cons (GetVar v1) (GetVar v2) to = do
+        vr1 <- lookupVar v1
+        vr2 <- lookupVar v2
+        return [cons spec32 to vr1 vr2]
+      
       compArithmetic cons v1 v2 to = do c1 <- compIntValTo v1 tmp1
                                         c2 <- compIntValTo v2 tmp2
                                         return $ (c1 ++ c2 ++ [cons spec32 to tmp1 tmp2])
@@ -166,12 +171,13 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
       -- 簡単な比較命令について、compSimpleExprToをする。
       compCompare cons = compArithmetic (cons spec32)
 
-
+      
       compIntValTo (AST.Const word) reg = return [LIMM spec32 reg (Imm word)]
       compIntValTo (GetVar v) reg = do varReg <- lookupVar v
                                        return [OR spec32 reg varReg varReg]
 
       
+      -- スコープのネストした中でモナドを走らせる．要は，いったん戻してるだけ．
       extendScope :: State CompileState a -> State CompileState a
       extendScope m = do
         fr <- use frame
