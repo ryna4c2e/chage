@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 -- このソースコードは、次の記事を信頼して書かれました．
 -- http://osecpu.osask.jp/wiki/?page0104
 -- http://osecpu.osask.jp/wiki/?page0092
@@ -13,43 +15,31 @@ import Data.List (genericLength)
 import Control.Monad.State
 import Control.Monad
 
+-- Lensなる便利なライブラリを使うことにした
+import Control.Lens 
 
 import Inst
-import AST
+import AST 
 
 
 -- 変数とレジスタの割当関係を管理する．
-data Frame = Frame { intVars :: [(IntVar, Reg)]
-                   , ptrVars :: [(PtrVar, PReg)]
+data Frame = Frame { _intVars :: [(IntVar, Reg)]
+                   , _ptrVars :: [(PtrVar, PReg)]
                    }
+
+makeLenses ''Frame
+
 
 emptyFrame :: Frame
 emptyFrame = Frame [] []
 
 
--- めんどくさいので略したが，変数の数の上限ではじくエラー処理をするべきだ．
-defineIntVar :: Frame -> IntVar -> (Frame, Reg)
-defineIntVar frame v = let vars = intVars frame
-                           reg  = Reg (genericLength vars)
-                       in (frame { intVars = (v, reg) : vars }, reg)
-
-definePtrVar :: Frame -> PtrVar -> (Frame, PReg)
-definePtrVar frame v = let vars = ptrVars frame
-                           reg  = PReg (genericLength vars)
-                       in (frame { ptrVars = (v, reg) : vars }, reg)
-
-
-lookupIntVar :: Frame -> IntVar -> Maybe Reg
-lookupIntVar frame v = lookup v (intVars frame)
-
-lookupPtrVar :: Frame -> PtrVar -> Maybe PReg
-lookupPtrVar frame v = lookup v (ptrVars frame)
-
-
 -- コンパイル中に保持しておくべき情報．内部的に用いられるのみである．
-data CompileState = CS { labels :: Word32, -- 導入したラベルの数
-                         frame :: Frame
+data CompileState = CS { _labels :: Word32, -- 導入したラベルの数
+                         _frame :: Frame
                        }
+makeLenses ''CompileState
+
 
 -- 変数として確保できるレジスタの数の上限. [R00 ~ R27]
 localRegisterCount = 0x27
@@ -76,8 +66,7 @@ compile :: AST -> Program
 compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
     where
       compAST :: AST -> State CompileState [Inst]
-      compAST (AST ss) = do words <- mapM compSentence ss
-                            return $ concat words
+      compAST (AST ss) = concat `fmap` mapM compSentence ss
 
       compSentence :: Sentence -> State CompileState [Inst]
       compSentence (DeclInt var) = defineVar var >> return []
@@ -178,48 +167,46 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
       compCompare cons = compArithmetic (cons spec32)
 
 
-      compIntValTo (Const word) reg = return [LIMM spec32 reg (Imm word)]
+      compIntValTo (AST.Const word) reg = return [LIMM spec32 reg (Imm word)]
       compIntValTo (GetVar v) reg = do varReg <- lookupVar v
                                        return [OR spec32 reg varReg varReg]
 
       
       extendScope :: State CompileState a -> State CompileState a
       extendScope m = do
-        st <- get
+        fr <- use frame
         ret <- m
-        modify $ \newSt -> newSt { frame = frame st }
+        frame .= fr
         return ret
 
       -- 整数の変数を，シンボルテーブルから引っ張ってくる．
+      lookupVar :: IntVar -> State CompileState Reg
       lookupVar var@(IntVar s) = do
-        st <- get
-        case lookupIntVar (frame st) var of
+        vars <- use (frame.intVars)
+        case lookup var vars of
           Nothing -> error $ "undefined variable: " ++ s
           Just rg -> return rg
 
       -- ポインタ変数を，シンボルテーブルから引っ張ってくる．
       lookupPtr :: PtrVar -> State CompileState PReg
       lookupPtr ptr@(PtrVar s) = do
-        st <- get
-        case lookupPtrVar (frame st) ptr of
+        vars <- use (frame.ptrVars)
+        case lookup ptr vars of
           Nothing -> error $ "undefined pointer variable: " ++ s
           Just pr -> return pr
 
-      defineVar var@(IntVar s) = do
-        st <- get
-        let (newFrame, reg) = frame st `defineIntVar` var
-        put (st { frame = newFrame })
+      defineVar var@(IntVar _) = do
+        reg <- use (frame.intVars) <&> genericLength <&> Reg
+        frame.intVars %= ((var, reg) :)
         return $ reg
 
-      definePtr ptr@(PtrVar s) = do
-        st <- get
-        let (newFrame, reg) = frame st `definePtrVar` ptr
-        put (st { frame = newFrame })
+      definePtr ptr@(PtrVar _) = do
+        reg <- use (frame.ptrVars) <&> genericLength <&> PReg
+        frame.ptrVars %= ((ptr, reg) :)
         return $ reg
 
       genLabel = do
-        st <- get
+        lb <- use labels
+        labels += lb + 1
+        return $ Label lb
 
-        let label = labels st
-        put (st { labels = label + 1 })
-        return $ Label label
