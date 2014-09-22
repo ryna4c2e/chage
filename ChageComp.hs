@@ -213,6 +213,6 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
 
       genLabel = do
         lb <- use labels
-        labels += lb + 1
+        labels += 1
         return $ Label lb
 
