@@ -18,43 +18,43 @@ data IntVar = IntVar String deriving (Show, Eq)
 data IntValue = Const Word32 
               | GetVar IntVar deriving (Show, Eq)
 
+-- 算術式の演算子．今は適当なデータ型を作った．
+data ArithOperator = And
+                   | Xor
+                   | Or
+                   | Add
+                   | Mul
+                     deriving (Show, Eq)
+-- 比較の演算子．
+data CompOperator = Cmpe
+                  | Cmpne
+                  | Cmpl
+                  | Cmple
+                  | Cmpg
+                  | Cmpge
+                    deriving (Show, Eq)
 -- 簡単な式．
-data SimpleExpr = Add IntValue IntValue
-                | Mul IntValue IntValue
+data Expr = Arith ArithOperator Expr Expr
+          | Comp  CompOperator  Expr Expr
 
-                | And IntValue IntValue
-                | Xor IntValue IntValue
-                | Or  IntValue IntValue
-
-
-                | Cmpe  IntValue IntValue
-                | Cmpne IntValue IntValue
-
-                | Cmpl  IntValue IntValue
-                | Cmple IntValue IntValue
-
-                | Cmpg  IntValue IntValue
-                | Cmpge IntValue IntValue
-
-                | Load  PtrVar IntValue
-
-                | Expr  IntValue
-                  deriving (Show, Eq)
+          | Load  PtrVar Expr
+          | Expr  IntValue
+            deriving (Show, Eq)
 
 -- とりあえず，ASTは文の連続とする．
 data AST = AST [Sentence] deriving (Show, Eq)
 
 -- 文．
-data Sentence = Assign IntVar SimpleExpr
-              | If SimpleExpr AST AST
-              | While SimpleExpr AST
+data Sentence = Assign IntVar Expr
+              | If Expr AST AST
+              | While Expr AST
               | DeclInt IntVar
               | DeclPtr PtrVar
 
               | PCopy PtrVar PtrVar
-              | Store PtrVar IntValue SimpleExpr
+              | Store PtrVar IntValue Expr
 
-              | Call String [SimpleExpr]
+              | Call String [Expr]
 
               | Data PtrVar [Word32]
               | Break

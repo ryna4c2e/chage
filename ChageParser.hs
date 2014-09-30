@@ -9,6 +9,7 @@ import Text.Parsec
 import Text.Parsec.String
 import Text.Parsec.Token
 import Text.Parsec.Language
+import Text.Parsec.Expr
 
 import AST
 
@@ -35,34 +36,36 @@ parseValue :: Parser IntValue
 parseValue = (Const <$> (fromInteger <$> integer tok)) <|> (GetVar <$> parseIntVar)
 
 
-parseSimpleExpr :: Parser SimpleExpr
-parseSimpleExpr = parseLoad <|>
-                   do v1 <- parseValue
-                      (do op <- parseOp
-                          v2 <- parseValue
-                          return $ op v1 v2) <|> return (Expr v1)
+parseExpr :: Parser Expr
+parseExpr = buildExpressionParser table parseTerm
     where
-      parseLoad = Load <$ reservedOp tok "$" <*> parsePtrVar <*> brackets tok parseValue
+      table = [
+                [ arith "*" Mul ]
+              , [ arith "+" Add ]
+              , [ arith "&" And ]
+              , [ arith "^" Xor ]
+              , [ arith "|" Or  ]
+              , [
+                  comp  "==" Cmpe
+                , comp  "!=" Cmpne
+                , comp  "<" Cmpl
+                , comp  "<=" Cmple
+                , comp  ">" Cmpg
+                , comp  ">=" Cmpge
+                ]
+              ]
+      infixOperator assoc opName func = Infix (func <$ reservedOp tok opName) assoc
+      arith opName constructor = infixOperator AssocLeft opName (Arith constructor)
+      comp  opName constructor = infixOperator AssocNone opName (Comp constructor)
 
-      parseOp = do str <- operator tok
-                   case lookup str db of
-                     Nothing -> unexpected str
-                     Just op -> return op
+parseTerm :: Parser Expr
+parseTerm = parens tok parseExpr
+        <|> Expr <$> parseValue
+        <|> parseLoad
+    where
+      parseLoad = Load <$ reservedOp tok "$" <*> parsePtrVar <*> brackets tok parseExpr
 
-          where
-            db = [
-                   ("+", Add)
-                 , ("*", Mul)
-                 , ("&", And)
-                 , ("^", Xor)
-                 , ("|", Or)
-                 , ("==", Cmpe)
-                 , ("!=", Cmpne)
-                 , (">", Cmpg)
-                 , ("<", Cmpl)
-                 , (">=", Cmpge)
-                 , ("<=", Cmple)
-                 ]
+
 
 parseChage :: Parser AST
 parseChage = parseAST <* spaces <* eof
@@ -83,15 +86,15 @@ parseSentence = try parseAssign <|>
 
 parseAssign    = Assign <$>  parseIntVar
                         <*   reservedOp tok "="
-                        <*>  parseSimpleExpr
+                        <*>  parseExpr
                         <*   semi tok
 
 parseIf        = If     <$   reserved tok "if"
-                        <*>  parseSimpleExpr
+                        <*>  parseExpr
                         <*>  braces tok parseAST
                         <*>  option (AST []) (reserved tok "else" *> braces tok parseAST)
 
-parseWhile     = While   <$  reserved tok "while" <*> parseSimpleExpr <*> braces tok parseAST
+parseWhile     = While   <$  reserved tok "while" <*> parseExpr <*> braces tok parseAST
 parseDeclInt   = DeclInt <$  reserved tok "int" <*> parseIntVar <* semi tok
 parseDeclPtr   = DeclPtr <$  reserved tok "ptr" <*> parsePtrVar <* semi tok
 parsePCopy     = PCopy   <$> parsePtrVar <* reservedOp tok ":=" <*> parsePtrVar <* semi tok
@@ -99,11 +102,11 @@ parseStore     = Store   <$  reservedOp tok "$"
                          <*> parsePtrVar
                          <*> brackets tok (parseValue)
                          <*  reservedOp tok "="
-                         <*> parseSimpleExpr
+                         <*> parseExpr
                          <*  semi tok
 
 parseCall      = Call    <$> identifier tok
-                         <*> parens tok (commaSep1 tok parseSimpleExpr)
+                         <*> parens tok (commaSep1 tok parseExpr)
                          <*  semi tok
 
 parseData      = (\pvar words -> Data pvar (map fromInteger words))
@@ -117,7 +120,7 @@ parseBreak = Break <$ reserved tok "debug" <* semi tok
 
 
 
-test = parseFromFile parseAST "test.chag"
+test = parse parseSentence "<STDIN>"
 
 
 parseChageFromFile :: FilePath -> IO AST
