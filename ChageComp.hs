@@ -77,7 +77,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
                                       return $ [PCP preg0 preg1]
 
       compSentence (Store p ix expr) = do ptr <- lookupPtr p
-                                          c1 <- compSimpleExprTo expr tmp1
+                                          c1 <- compExprTo expr tmp1
                                           c2 <- compIntValTo ix tmp2
 
                                           return $ c1 ++ c2 ++ [PADD spec32 p3e ptr tmp2,
@@ -89,10 +89,10 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
                                          return $ [PLIMM pReg lbl, LB readWrite lbl, DATA ws]
 
       compSentence (Assign var expr) = do dst <- lookupVar var
-                                          compSimpleExprTo expr dst
+                                          compExprTo expr dst
 
       compSentence (If cond cnsq altn) =
-          do c1 <- compSimpleExprTo cond tmp1
+          do c1 <- compExprTo cond tmp1
              c2 <- extendScope (compAST cnsq)
              c3 <- extendScope (compAST altn)
 
@@ -105,7 +105,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
                         c3 ++ [LB jumpOnly endLabel]
 
       compSentence (While cond body) =
-          do c1 <- compSimpleExprTo cond tmp1
+          do c1 <- compExprTo cond tmp1
              c2 <- extendScope (compAST body)
 
              startLabel <- genLabel
@@ -119,7 +119,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
       compSentence (Call func args) =
           case lookup func apiList of
             Nothing -> error $ "function not found: " ++ func
-            Just (inst, regs) -> do s <- sequence (zipWith compSimpleExprTo args regs)
+            Just (inst, regs) -> do s <- sequence (zipWith compExprTo args regs)
                                     -- 逐次割り当てしておく。
                                     lb <- genLabel
                                     return $ concat s ++ [LIMM spec32 (Reg 0x30) inst,
@@ -136,28 +136,31 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
                  ("api_fillOval",  (Imm 0x0005, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34, Reg 0x35, Reg 0x36]))]
 
 
-      -- simplexpr を、指定されたレジスタに計算していれる命令列を出す。
-      compSimpleExprTo :: SimpleExpr -> Reg -> State CompileState [Inst]
-      compSimpleExprTo (Expr v1)   outR = compIntValTo v1 outR
-      compSimpleExprTo (Add v1 v2) outR = compArithmetic ADD v1 v2 outR
-      compSimpleExprTo (Mul v1 v2) outR = compArithmetic MUL v1 v2 outR
+      -- exprを、指定されたレジスタに計算していれる命令列を出す。
+      compExprTo :: Expr -> Reg -> State CompileState [Inst]
+      compExprTo (Expr v1)   outR = compIntValTo v1 outR
 
-      compSimpleExprTo (And v1 v2) outR = compArithmetic AND v1 v2 outR
-      compSimpleExprTo (Xor v1 v2) outR = compArithmetic XOR v1 v2 outR
-      compSimpleExprTo (Or  v1 v2) outR = compArithmetic OR  v1 v2 outR
+      compExprTo (Arith op e1 e2) = 
 
-      compSimpleExprTo (Cmpe  v1 v2) outR = compCompare CMPE  v1 v2 outR
-      compSimpleExprTo (Cmpne v1 v2) outR = compCompare CMPNE v1 v2 outR
-      compSimpleExprTo (Cmpl  v1 v2) outR = compCompare CMPL  v1 v2 outR
-      compSimpleExprTo (Cmple v1 v2) outR = compCompare CMPLE v1 v2 outR
-      compSimpleExprTo (Cmpg  v1 v2) outR = compCompare CMPG  v1 v2 outR
-      compSimpleExprTo (Cmpge v1 v2) outR = compCompare CMPGE v1 v2 outR
+      compExprTo (Add v1 v2) outR = compArithmetic ADD v1 v2 outR
+      compExprTo (Mul v1 v2) outR = compArithmetic MUL v1 v2 outR
 
-      compSimpleExprTo (Load  ptr v) outR = do p <- lookupPtr ptr
-                                               c2 <- compIntValTo v tmp1
-                                               return $ c2 ++  [PADD spec32 p3e p tmp1, LMEM0 spec32 outR p3e]
+      compExprTo (And v1 v2) outR = compArithmetic AND v1 v2 outR
+      compExprTo (Xor v1 v2) outR = compArithmetic XOR v1 v2 outR
+      compExprTo (Or  v1 v2) outR = compArithmetic OR  v1 v2 outR
 
-      -- 簡単な算術命令について、compSimpleExprToをする。
+      compExprTo (Cmpe  v1 v2) outR = compCompare CMPE  v1 v2 outR
+      compExprTo (Cmpne v1 v2) outR = compCompare CMPNE v1 v2 outR
+      compExprTo (Cmpl  v1 v2) outR = compCompare CMPL  v1 v2 outR
+      compExprTo (Cmple v1 v2) outR = compCompare CMPLE v1 v2 outR
+      compExprTo (Cmpg  v1 v2) outR = compCompare CMPG  v1 v2 outR
+      compExprTo (Cmpge v1 v2) outR = compCompare CMPGE v1 v2 outR
+
+      compExprTo (Load  ptr v) outR = do p <- lookupPtr ptr
+                                         c2 <- compIntValTo v tmp1
+                                         return $ c2 ++  [PADD spec32 p3e p tmp1, LMEM0 spec32 outR p3e]
+
+      -- 簡単な算術命令について、compExprToをする。
       -- レジスタ同士の演算だと，すぐにできるため簡略化
       compArithmetic cons (GetVar v1) (GetVar v2) to = do
         vr1 <- lookupVar v1
@@ -168,7 +171,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
                                         c2 <- compIntValTo v2 tmp2
                                         return $ (c1 ++ c2 ++ [cons spec32 to tmp1 tmp2])
 
-      -- 簡単な比較命令について、compSimpleExprToをする。
+      -- 簡単な比較命令について、compExprToをする。
       compCompare cons = compArithmetic (cons spec32)
 
       
