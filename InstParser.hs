@@ -178,3 +178,11 @@ test = do
   case res of
     Right res -> mapM_ print (instructions res)
     Left err  -> print err
+
+
+parseInstFromFile :: FilePath -> IO Program
+parseInstFromFile fname = do res <- parseFromFile parseProgram fname
+                             case res of
+                              (Right res) -> return res
+                              (Left err)  -> error (show err)
+                      

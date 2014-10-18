@@ -7,7 +7,7 @@ import Data.List
 import System.IO
 
 import qualified Data.ByteString as B
-import Data.ByteString.Builder
+import Data.ByteString.Lazy.Builder
 
 import Inst
 
@@ -141,4 +141,4 @@ toBinary :: [Word32] -> Builder
 toBinary w32s = mconcat (map word8 osecpuSignatureM32 ++ map word32BE w32s)
 
 hAssembleOut :: Handle -> Program -> IO ()
-hAssembleOut h p = hPutBuilder h $ toBinary $ assemble p
+hAssembleOut h p = hPutBuilder h (toBinary (assemble p)) >> print p
