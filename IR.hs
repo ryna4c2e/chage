@@ -7,6 +7,7 @@ module IR where
 import Data.Word
 import Control.Monad.State
 import Type
+import Typing
 import qualified AST as A
     
 data IR = If      A.Var [IR] [IR] -- if var consequence alternative
@@ -15,7 +16,7 @@ data IR = If      A.Var [IR] [IR] -- if var consequence alternative
         | Arith   A.ArithOperator A.Var A.Var A.Var
         | Comp    A.CompOperator  A.Var A.Var A.Var
         | ConstS32Int A.Var Int
-        | GetVar  A.Var Type A.Var
+        | Assign  A.Var Type A.Var
         | Load    A.Var A.Var A.Var
         | Store   A.Var A.Var A.Var
         | Call    String [A.Var]
@@ -39,7 +40,8 @@ normalize ast = evalState (normalize' ast) 0
       normalizeSentence :: A.Sentence Type -> State Int [IR]
       normalizeSentence s =
           case s of
-            A.Assign var expr -> normalizeExpr expr var
+            A.Assign var expr -> do (s, i1) <- assignToNewVar expr
+                                    return $ i1 ++ [Assign var (typeOf expr) s]
             A.If expr csq alt -> do (s, i1) <- assignToNewVar expr
                                     i2 <- normalize' csq
                                     i3 <- normalize' alt

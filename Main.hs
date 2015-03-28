@@ -16,7 +16,9 @@ import GenM32
 import AST
 import ChageComp
 import ChageParser
-
+import Typing
+import IR
+    
 data Flag
   = Language (FilePath -> IO Program)
   | Output FilePath
@@ -40,7 +42,7 @@ inst = parseInstFromFile
 
 chage :: FilePath -> IO Program
 chage fname = do ast <- parseChageFromFile fname
-                 return $ compile ast
+                 return $ compile (normalize (typing ast))
 
 
 chageOptions :: [String] -> IO ([Flag], [String])

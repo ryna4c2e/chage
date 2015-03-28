@@ -287,12 +287,29 @@ lookupPtr ptr@(Var s) = do
     Nothing -> error $ "undefined pointer variable: " ++ s
     Just pr -> return pr
 
-defineVar var@(Var _) = do
+alreadyDefinedVar :: Var -> State CompileState Bool
+alreadyDefinedVar v = do
+  vars <- use (frame.intVars)
+  return $ case lookup v vars of
+    Nothing -> False
+    Just _  -> True
+
+alreadyDefinedPtr v = do
+  vars <- use (frame.ptrVars)
+  return $ case lookup v vars of
+    Nothing -> False
+    Just _  -> True
+               
+defineVar var@(Var v) = do
+  defd <- alreadyDefinedVar var
+  when defd (error $ "already defined" ++ v)
   reg <- use (frame.intVars) <&> genericLength <&> Reg
   frame.intVars %= ((var, reg) :)
   return $ reg
 
-definePtr ptr@(Var _) = do
+definePtr ptr@(Var v) = do
+  defd <- alreadyDefinedPtr ptr
+  when defd (error $ "already defined" ++ v)
   reg <- use (frame.ptrVars) <&> genericLength <&> PReg
   frame.ptrVars %= ((ptr, reg) :)
   return $ reg
@@ -335,12 +352,12 @@ compile is = Program $ evalState (compile' is) (CS 0 emptyFrame)
 
                    return $ [LIMM spec32 tmp2 (Imm 1),
                              XOR  spec32 tmp1 cond tmp2,
-                             CND tmp1] ++
+                             CND tmp1, PLIMM p3f ifLabel] ++
                               c1 ++ [PLIMM p3f endLabel, LB jumpOnly ifLabel] ++
                               c2 ++ [LB jumpOnly endLabel]
             IR.While var cond body ->
-                do cv <- lookupVar var
-                   c1 <- compile' cond
+                do c1 <- compile' cond
+                   cv <- lookupVar var
                    c2 <- extendScope (compile' body)
                    startLabel <- genLabel
                    endLabel <- genLabel
@@ -376,14 +393,12 @@ compile is = Program $ evalState (compile' is) (CS 0 emptyFrame)
                 do defineVar var
                    r <- lookupVar var
                    return [LIMM spec32 r (Imm (fromInteger (toInteger int)))]
-            IR.GetVar var S32Int val ->
-                do defineVar var
-                   r <- lookupVar var
+            IR.Assign var S32Int val ->
+                do r <- lookupVar var
                    v <- lookupVar val
                    return [OR spec32 r v v]
-            IR.GetVar var (Pointer _) val ->
-                do definePtr var
-                   p <- lookupPtr var
+            IR.Assign var (Pointer _) val ->
+                do p <- lookupPtr var
                    v <- lookupPtr val
                    return [PCP p v]
 
@@ -432,6 +447,11 @@ test3 = AST [
 test4 = AST [
          Declare (Var "i") S32Int (ConstS32Int () 0),
          While (GetVar () (Var "i")) (AST [])
+        ]
+test5 = AST [
+         If (Comp () Cmpe (ConstS32Int () 3) (ConstS32Int () 4))
+            (AST [])
+            (AST [])
         ]
 
 process = compile . IR.normalize . typing

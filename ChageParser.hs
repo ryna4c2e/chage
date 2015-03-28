@@ -32,10 +32,10 @@ parseVar :: Parser Var
 parseVar = Var <$> identifier tok
 
 
-parseValue :: Parser Expr
-parseValue = (ConstS32Int <$> (fromInteger <$> integer tok))
+parseValue :: Parser (Expr ())
+parseValue = (ConstS32Int () <$> (fromInteger <$> integer tok))
 
-parseExpr :: Parser Expr
+parseExpr :: Parser (Expr ())
 parseExpr = buildExpressionParser table parseTerm
     where
       table = [
@@ -54,23 +54,23 @@ parseExpr = buildExpressionParser table parseTerm
                 ]
               ]
       infixOperator assoc opName func = Infix (func <$ reservedOp tok opName) assoc
-      arith opName constructor = infixOperator AssocLeft opName (Arith constructor)
-      comp  opName constructor = infixOperator AssocNone opName (Comp constructor)
+      arith opName constructor = infixOperator AssocLeft opName (Arith () constructor)
+      comp  opName constructor = infixOperator AssocNone opName (Comp () constructor)
 
-parseTerm :: Parser Expr
+parseTerm :: Parser (Expr ())
 parseTerm = parens tok parseExpr
         <|> parseValue
-        <|> (GetVar <$> parseVar)
+        <|> (GetVar () <$> parseVar)
         <|> parseLoad
     where
-      parseLoad = Load <$ reservedOp tok "$" <*> parseExpr <*> brackets tok parseExpr
+      parseLoad = Load () <$ reservedOp tok "$" <*> parseExpr <*> brackets tok parseExpr
 
 
 
-parseChage :: Parser AST
+parseChage :: Parser (AST ())
 parseChage = parseAST <* spaces <* eof
 
-parseAST :: Parser AST
+parseAST :: Parser (AST ())
 parseAST = AST <$> many (whiteSpace tok *> parseSentence)
 
 parseSentence = try parseAssign <|>
@@ -103,14 +103,16 @@ parseDeclare   = do reserved tok "var"
                     typ <- parseType
                     reservedOp tok "="
                     initial <- parseExpr
+                    semi tok
                     return $ Declare var typ initial
+                    
 --parseDeclInt   = Declare <$  reserved tok "int" <*> parseIntVar <* semi tok
 --parseDeclPtr   = Declare <$  reserved tok "ptr" <*> parsePtrVar <* semi tok
 
                  
 parseStore     = Store   <$  reservedOp tok "$"
-                         <*> (GetVar <$> parseVar)
-                         <*> brackets tok (parseValue)
+                         <*> (parseExpr)
+                         <*> brackets tok (parseExpr)
                          <*  reservedOp tok "="
                          <*> parseExpr
                          <*  semi tok
@@ -133,7 +135,7 @@ parseBreak = DebugStop <$ reserved tok "debug" <* semi tok
 test = parse parseSentence "<STDIN>"
 
 
-parseChageFromFile :: FilePath -> IO AST
+parseChageFromFile :: FilePath -> IO (AST ())
 parseChageFromFile fname = do res <- parseFromFile parseChage fname
                               case res of
                                (Right ast) -> return ast
