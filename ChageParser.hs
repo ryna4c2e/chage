@@ -11,6 +11,7 @@ import Text.Parsec.Token
 import Text.Parsec.Language
 import Text.Parsec.Expr
 
+import Type
 import AST
 
 -- ＿人人人人人人人＿
@@ -19,7 +20,7 @@ import AST
 chageStyle = javaStyle {
                opStart = oneOf "!&*+./<=>?@\\^|-~{}",
                opLetter = oneOf "!&*+./<=>?@\\^|-~",
-               reservedNames = ["if", "while", "int", "else"],
+               reservedNames = ["if", "while", "int", "else", "var"],
                reservedOpNames = ["+", "-", "*", "<<", ">>", "&", "|", "^", "==", "!=", ">=", "<=", ">", "<", ":=", "$"]
              }
 
@@ -27,16 +28,12 @@ chageStyle = javaStyle {
 tok = makeTokenParser javaStyle
 
 
-parseIntVar :: Parser IntVar
-parseIntVar = IntVar <$> identifier tok
-
-parsePtrVar :: Parser PtrVar
-parsePtrVar = PtrVar <$> identifier tok
+parseVar :: Parser Var
+parseVar = Var <$> identifier tok
 
 
-parseValue :: Parser IntValue
-parseValue = (Const <$> (fromInteger <$> integer tok)) <|> (GetVar <$> parseIntVar)
-
+parseValue :: Parser Expr
+parseValue = (ConstS32Int <$> (fromInteger <$> integer tok))
 
 parseExpr :: Parser Expr
 parseExpr = buildExpressionParser table parseTerm
@@ -62,10 +59,11 @@ parseExpr = buildExpressionParser table parseTerm
 
 parseTerm :: Parser Expr
 parseTerm = parens tok parseExpr
-        <|> Expr <$> parseValue
+        <|> parseValue
+        <|> (GetVar <$> parseVar)
         <|> parseLoad
     where
-      parseLoad = Load <$ reservedOp tok "$" <*> parsePtrVar <*> brackets tok parseExpr
+      parseLoad = Load <$ reservedOp tok "$" <*> parseExpr <*> brackets tok parseExpr
 
 
 
@@ -78,15 +76,13 @@ parseAST = AST <$> many (whiteSpace tok *> parseSentence)
 parseSentence = try parseAssign <|>
                 try parseIf <|>
                 try parseWhile <|>
-                try parseDeclInt <|> 
-                try parseDeclPtr <|> 
-                try parsePCopy <|> 
+                try parseDeclare <|>
                 try parseStore <|> 
                 try parseCall <|>
                 try parseBreak <|>
                 parseData
 
-parseAssign    = Assign <$>  parseIntVar
+parseAssign    = Assign <$>  parseVar
                         <*   reservedOp tok "="
                         <*>  parseExpr
                         <*   semi tok
@@ -97,11 +93,23 @@ parseIf        = If     <$   reserved tok "if"
                         <*>  option (AST []) (reserved tok "else" *> braces tok parseAST)
 
 parseWhile     = While   <$  reserved tok "while" <*> parseExpr <*> braces tok parseAST
-parseDeclInt   = DeclInt <$  reserved tok "int" <*> parseIntVar <* semi tok
-parseDeclPtr   = DeclPtr <$  reserved tok "ptr" <*> parsePtrVar <* semi tok
-parsePCopy     = PCopy   <$> parsePtrVar <* reservedOp tok ":=" <*> parsePtrVar <* semi tok
+
+parseType      = (reserved tok "int" >> return S32Int)
+             <|> do reservedOp tok "*"
+                    Pointer <$> parseType
+parseDeclare   = do reserved tok "var"
+                    var <- parseVar
+                    reservedOp tok ":"
+                    typ <- parseType
+                    reservedOp tok "="
+                    initial <- parseExpr
+                    return $ Declare var typ initial
+--parseDeclInt   = Declare <$  reserved tok "int" <*> parseIntVar <* semi tok
+--parseDeclPtr   = Declare <$  reserved tok "ptr" <*> parsePtrVar <* semi tok
+
+                 
 parseStore     = Store   <$  reservedOp tok "$"
-                         <*> parsePtrVar
+                         <*> (GetVar <$> parseVar)
                          <*> brackets tok (parseValue)
                          <*  reservedOp tok "="
                          <*> parseExpr
@@ -113,12 +121,12 @@ parseCall      = Call    <$> identifier tok
 
 parseData      = (\pvar words -> Data pvar (map fromInteger words))
                <$  reserved tok "data" 
-               <*> parsePtrVar
+               <*> parseVar
                <*  reservedOp tok "="
                <*> brackets tok (commaSep1 tok (integer tok))
                <*  semi tok
 
-parseBreak = Break <$ reserved tok "debug" <* semi tok
+parseBreak = DebugStop <$ reserved tok "debug" <* semi tok
 
 
 

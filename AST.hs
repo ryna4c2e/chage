@@ -29,25 +29,29 @@ data CompOperator = Cmpe
                   | Cmpge
                     deriving (Show, Eq)
 -- 式．
-data Expr = Arith ArithOperator Expr Expr -- $1 op   $2
-          | Comp  CompOperator  Expr Expr -- $1 comp $2
-          | ConstS32Int Int
-          | Load  Expr Expr -- get value of $1[$2]
+data Expr t = Arith t ArithOperator Expr Expr -- $1 op   $2
+            | Comp  t CompOperator  Expr Expr -- $1 comp $2
+            | ConstS32Int t Int
+            | GetVar t Var
+            | Load t Expr Expr -- get value of $1[$2]
             deriving (Show, Eq)
 
 -- とりあえず，ASTは文の連続とする．
-newtype AST = AST [Sentence] deriving (Show, Eq)
+newtype AST t = AST [Sentence t] deriving (Eq)
 
+instance Show t => Show (AST t) where
+    show (AST stmts) = unlines $ map show stmts
+    
 -- 文．
-data Sentence = Assign  Var  Expr
-              | If      Expr AST  AST
-              | While   Expr AST
-              | Declare Var Type
+data Sentence t = Assign  Var  (Expr t)
+                | If      (Expr t) (AST t) (AST t)
+                | While   (Expr t) (AST t)
+                | Declare Var Type (Expr t)
 
-              | Store   Expr Expr Expr -- store $3 into $1[$2]
+                | Store   (Expr t) (Expr t) (Expr t) -- store $3 into $1[$2]
+ 
+                | Call    String [Expr t]
 
-              | Call    String [Expr]
-
-              | Data    Var [Word32]
-              | DebugStop
-           deriving (Show, Eq)
+                | Data    Var [Word32]
+                | DebugStop
+                  deriving (Show, Eq)

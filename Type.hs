@@ -2,6 +2,6 @@
 
 module Type where
 
-data Type = SInt32
+data Type = S32Int
           | Pointer Type
             deriving (Show, Eq)

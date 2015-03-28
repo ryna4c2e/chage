@@ -31,26 +31,30 @@ typing' (AST sentences) = forM_ sentences typingSentence
                                   t2 <- typeOf expr
                                   typeAssert t1 t2
             If cond csq alt -> do t1 <- typeOf cond
-                                  typeAssert SInt32 t1
+                                  typeAssert S32Int t1
                                   typing' csq
                                   typing' alt
             While cond body -> do t1 <- typeOf cond
-                                  typeAssert SInt32 t1
+                                  typeAssert S32Int t1
                                   typing' body
-            Declare var typ -> modify ((var, typ):)
+            Declare v t ini -> do t1 <- typeOf ini
+                                  typeAssert t t1
+                                  putVar v t
 
             Store dat idx v -> do t1 <- typeOf dat
                                   t2 <- typeOf idx
                                   t3 <- typeOf v
                                   case (t1, t2, t3) of
-                                    (Pointer t, SInt32, s) | s == t -> return ()
+                                    (Pointer t, S32Int, s) | s == t -> return ()
                                     otherwise -> lift (throwError "store mismatch")
             Call name exprs -> forM_ exprs $ \e -> do
                                  t1 <- typeOf e
-                                 typeAssert SInt32 t1
-            Data _ _  -> return ()
+                                 typeAssert S32Int t1
+            Data v _  -> putVar v (Pointer S32Int)
             DebugStop -> return ()
 
+putVar :: Var -> Type -> TypingM ()
+putVar v t = modify ((v, t):)
 typeLookup :: Var -> TypingM Type
 typeLookup var = do st <- get
                     case lookup var st of
@@ -62,20 +66,20 @@ typeOf expr = case expr of
                 Arith _ e1 e2 -> do t1 <- typeOf e1
                                     t2 <- typeOf e2
                                     case (t1, t2) of
-                                      (SInt32, SInt32) -> return SInt32
+                                      (S32Int, S32Int) -> return S32Int
                                       otherwise -> lift (throwError "arithmetic operand error")
                 Comp  _ e1 e2 -> do t1 <- typeOf e1
                                     t2 <- typeOf e2
                                     case (t1, t2) of
-                                      (SInt32, SInt32) -> return SInt32
+                                      (S32Int, S32Int) -> return S32Int
                                       otherwise -> lift (throwError "comparison operand error")
                 Load dat idx  -> do t1 <- typeOf dat
                                     t2 <- typeOf idx
                                     case (t1, t2) of
                                       (Pointer x, y) | x == y -> return x
                                       otherwise -> lift (throwError "indexing operation error")
-                ConstS32Int int -> return SInt32
-                                          
+                ConstS32Int int -> return S32Int
+                GetVar var -> typeLookup var
                                               
 typeAssert :: Type -> Type -> TypingM ()
 typeAssert t1 t2 | t1 /= t2  = lift (throwError ("type mismatch: " ++ show t1 ++ " != " ++ show t2))
@@ -84,8 +88,8 @@ typeAssert t1 t2 | t1 /= t2  = lift (throwError ("type mismatch: " ++ show t1 ++
 
 
 testAST1 = AST [
-           Declare (Var "x") SInt32,
-           Declare (Var "y") (Pointer SInt32),
-           Assign  (Var "y") (Arith Add (ConstS32Int 3) (ConstS32Int 4))
+           Declare (Var "x") S32Int (ConstS32Int 0),
+           Data (Var "y") [1, 2, 3],
+           While (Comp Cmpe (GetVar (Var "x")) (GetVar (Var "y"))) (AST [DebugStop])
            
            ]

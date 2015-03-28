@@ -20,11 +20,11 @@ import Control.Lens
 
 import Inst
 import AST 
-
+import Type
 
 -- 変数とレジスタの割当関係を管理する．
-data Frame = Frame { _intVars :: [(IntVar, Reg)]
-                   , _ptrVars :: [(PtrVar, PReg)]
+data Frame = Frame { _intVars :: [(Var, Reg)]
+                   , _ptrVars :: [(Var, PReg)]
                    }
 
 makeLenses ''Frame
@@ -62,6 +62,79 @@ jumpOnly  = LabelOpt 0
 readWrite = LabelOpt 1
 
 
+-- 全て艦これが悪い
+normalize :: AST -> AST
+normalize ast = evalState (normalize' ast) 0
+    where
+      genSym :: State Int Var
+      genSym = do st <- get
+                  modify (1 +)
+                  return $ Var $ "G" ++ show st
+                         
+      normalize' :: AST -> State Int AST
+      normalize' (AST stmts) = do sss <- forM stmts normalizeSentence
+                                  return $ AST (concat sss)
+
+      normalizeExpr :: Expr -> Var -> State Int [Sentence]
+      normalizeExpr expr var =
+          case expr of
+            Arith op e1 e2 ->
+                do s1 <- genSym
+                   s2 <- genSym
+                   n1 <- normalizeExpr e1 s1
+                   n2 <- normalizeExpr e2 s2
+                   return $ n1 ++ n2 ++ [Declare var S32Int $ Arith op (GetVar s1) (GetVar s2)]
+            Comp  op e1 e2 ->
+                do s1 <- genSym
+                   s2 <- genSym
+                   n1 <- normalizeExpr e1 s1
+                   n2 <- normalizeExpr e2 s2
+                   return $ n1 ++ n2 ++ [Declare var S32Int $ Comp  op (GetVar s1) (GetVar s2)]
+            ConstS32Int v ->
+                do s <- genSym
+                   return [Declare var S32Int $ ConstS32Int v]
+            GetVar v ->
+                do s <- genSym
+                   return [Declare var S32Int $ GetVar v]
+            Load ptr idx ->
+                do s1 <- genSym
+                   s2 <- genSym
+                   n1 <- normalizeExpr ptr s1
+                   n2 <- normalizeExpr idx s2
+                   return $ n1 ++ n2 ++ [Declare var S32Int $ Load (GetVar s1) (GetVar s2)]
+
+      normalizeSentence :: Sentence -> State Int [Sentence]
+      normalizeSentence sentence =
+          case sentence of
+            Assign var expr -> normalizeExpr expr var
+            If cnd csq alt  ->
+                do s <- genSym
+                   n1 <- normalizeExpr cnd s
+                   a1 <- normalize' csq
+                   a2 <- normalize' alt
+                   return $ n1 ++ [If (GetVar s) a1 a2]
+            While cnd body ->
+                do s <- genSym
+                   n <- normalizeExpr cnd s
+                   a <- normalize' body
+                   return $ n ++ [While (GetVar s) a]
+            Declare var t expr -> normalizeExpr expr var
+            Store dat idx val ->
+                do s1 <- genSym
+                   s2 <- genSym
+                   s3 <- genSym
+                   n1 <- normalizeExpr dat s1
+                   n2 <- normalizeExpr idx s2
+                   n3 <- normalizeExpr val s3
+                   return $ n1 ++ n2 ++ n3 ++ [Store (GetVar s1) (GetVar s2) (GetVar s3)]
+            Call name exprs ->
+                do ss <- mapM (\_ -> genSym) exprs
+                   ns <- sequence $ zipWith normalizeExpr exprs ss
+                   return $ concat ns ++ [Call name (map GetVar ss)]
+            Data var ws -> return [Data var ws]
+            DebugStop -> return [DebugStop]
+
+{-                         
 compile :: AST -> Program
 compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
     where
@@ -140,7 +213,6 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
       compExprTo :: Expr -> Reg -> State CompileState [Inst]
       compExprTo (Expr v1)   outR = compIntValTo v1 outR
 
-      compExprTo (Arith op e1 e2) = 
 
       compExprTo (Add v1 v2) outR = compArithmetic ADD v1 v2 outR
       compExprTo (Mul v1 v2) outR = compArithmetic MUL v1 v2 outR
@@ -219,3 +291,15 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
         labels += 1
         return $ Label lb
 
+-}
+
+
+test1 = AST [
+         Declare (Var "x") S32Int (Arith Add
+                                   (Arith Xor (ConstS32Int 3) (ConstS32Int 4))
+                                   (ConstS32Int 5))]
+test2 = AST [
+         Data  (Var "d") [1, 2, 3],
+         Declare (Var "y") S32Int (Load (GetVar (Var "d")) (ConstS32Int 1)),
+         Store (GetVar (Var "d")) (ConstS32Int 3) (ConstS32Int 4)
+        ]
