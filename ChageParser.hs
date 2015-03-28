@@ -13,7 +13,9 @@ import Text.Parsec.Expr
 
 import AST
 
-
+-- ＿人人人人人人人＿
+-- ＞　chageStyle　＜
+-- ￣Y^Y^Y^Y^Y^Y￣
 chageStyle = javaStyle {
                opStart = oneOf "!&*+./<=>?@\\^|-~{}",
                opLetter = oneOf "!&*+./<=>?@\\^|-~",
@@ -48,9 +50,9 @@ parseExpr = buildExpressionParser table parseTerm
               , [
                   comp  "==" Cmpe
                 , comp  "!=" Cmpne
-                , comp  "<" Cmpl
+                , comp  "<"  Cmpl
                 , comp  "<=" Cmple
-                , comp  ">" Cmpg
+                , comp  ">"  Cmpg
                 , comp  ">=" Cmpge
                 ]
               ]

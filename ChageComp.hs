@@ -36,7 +36,7 @@ emptyFrame = Frame [] []
 
 -- コンパイル中に保持しておくべき情報．内部的に用いられるのみである．
 data CompileState = CS { _labels :: Word32, -- 導入したラベルの数
-                         _frame :: Frame
+                         _frame  :: Frame
                        }
 makeLenses ''CompileState
 

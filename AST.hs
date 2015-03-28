@@ -4,19 +4,14 @@
 
 module AST where
 
+import Type
+
 -- 32bitのデータを扱うため
 import Data.Word
 
 
--- ポインタ変数を表すノード
-data PtrVar = PtrVar String deriving (Show, Eq)
-
--- こちらは32bitの整数を表すノード
-data IntVar = IntVar String deriving (Show, Eq)
-
--- 整数の値を利用している箇所を表すノード
-data IntValue = Const Word32 
-              | GetVar IntVar deriving (Show, Eq)
+-- 変数名を表すノード
+newtype Var = Var String deriving (Show, Eq)
 
 -- 算術式の演算子．今は適当なデータ型を作った．
 data ArithOperator = And
@@ -33,29 +28,26 @@ data CompOperator = Cmpe
                   | Cmpg
                   | Cmpge
                     deriving (Show, Eq)
--- 簡単な式．
-data Expr = Arith ArithOperator Expr Expr
-          | Comp  CompOperator  Expr Expr
-
-          | Load  PtrVar Expr
-          | Expr  IntValue
+-- 式．
+data Expr = Arith ArithOperator Expr Expr -- $1 op   $2
+          | Comp  CompOperator  Expr Expr -- $1 comp $2
+          | ConstS32Int Int
+          | Load  Expr Expr -- get value of $1[$2]
             deriving (Show, Eq)
 
 -- とりあえず，ASTは文の連続とする．
-data AST = AST [Sentence] deriving (Show, Eq)
+newtype AST = AST [Sentence] deriving (Show, Eq)
 
 -- 文．
-data Sentence = Assign IntVar Expr
-              | If Expr AST AST
-              | While Expr AST
-              | DeclInt IntVar
-              | DeclPtr PtrVar
+data Sentence = Assign  Var  Expr
+              | If      Expr AST  AST
+              | While   Expr AST
+              | Declare Var Type
 
-              | PCopy PtrVar PtrVar
-              | Store PtrVar IntValue Expr
+              | Store   Expr Expr Expr -- store $3 into $1[$2]
 
-              | Call String [Expr]
+              | Call    String [Expr]
 
-              | Data PtrVar [Word32]
-              | Break
+              | Data    Var [Word32]
+              | DebugStop
            deriving (Show, Eq)

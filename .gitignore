@@ -3,6 +3,7 @@
 *.hi
 Main
 
+*~
 *.b32
 *.chag
 *.ask
