@@ -24,7 +24,7 @@ data IR = If      A.Var [IR] [IR] -- if var consequence alternative
         | DebugStop
           deriving (Show, Eq)
 
-
+                   
 normalize :: A.AST Type -> [IR]
 normalize ast = evalState (normalize' ast) 0
     where
