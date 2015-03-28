@@ -17,11 +17,13 @@ import Control.Monad
 
 -- Lensなる便利なライブラリを使うことにした
 import Control.Lens 
-
+import Control.Applicative
+    
 import Inst
 import AST 
 import Type
-
+import Typing
+import qualified IR
 -- 変数とレジスタの割当関係を管理する．
 data Frame = Frame { _intVars :: [(Var, Reg)]
                    , _ptrVars :: [(Var, PReg)]
@@ -62,8 +64,9 @@ jumpOnly  = LabelOpt 0
 readWrite = LabelOpt 1
 
 
+{-
 -- 全て艦これが悪い
-normalize :: AST -> AST
+normalize :: AST Type -> AST Type
 normalize ast = evalState (normalize' ast) 0
     where
       genSym :: State Int Var
@@ -71,115 +74,122 @@ normalize ast = evalState (normalize' ast) 0
                   modify (1 +)
                   return $ Var $ "G" ++ show st
                          
-      normalize' :: AST -> State Int AST
+      normalize' :: AST Type -> State Int (AST Type)
       normalize' (AST stmts) = do sss <- forM stmts normalizeSentence
                                   return $ AST (concat sss)
 
-      normalizeExpr :: Expr -> Var -> State Int [Sentence]
+      normalizeExpr :: Expr Type -> Var -> State Int [Sentence Type]
       normalizeExpr expr var =
           case expr of
-            Arith op e1 e2 ->
-                do s1 <- genSym
-                   s2 <- genSym
-                   n1 <- normalizeExpr e1 s1
-                   n2 <- normalizeExpr e2 s2
-                   return $ n1 ++ n2 ++ [Declare var S32Int $ Arith op (GetVar s1) (GetVar s2)]
-            Comp  op e1 e2 ->
-                do s1 <- genSym
-                   s2 <- genSym
-                   n1 <- normalizeExpr e1 s1
-                   n2 <- normalizeExpr e2 s2
-                   return $ n1 ++ n2 ++ [Declare var S32Int $ Comp  op (GetVar s1) (GetVar s2)]
-            ConstS32Int v ->
+            Arith t op e1 e2 ->
+                do (n1, v1) <- assignNewVar e1
+                   (n2, v2) <- assignNewVar e2
+                   return $ n1 ++ n2 ++ [Declare var t $ Arith t op v1 v2]
+            Comp t op e1 e2 ->
+                do (n1, v1) <- assignNewVar e1
+                   (n2, v2) <- assignNewVar e2
+                   return $ n1 ++ n2 ++ [Declare var t $ Comp t op v1 v2]
+            ConstS32Int t v -> return [Declare var S32Int $ ConstS32Int t v]
+            GetVar t v ->
                 do s <- genSym
-                   return [Declare var S32Int $ ConstS32Int v]
-            GetVar v ->
-                do s <- genSym
-                   return [Declare var S32Int $ GetVar v]
-            Load ptr idx ->
-                do s1 <- genSym
-                   s2 <- genSym
-                   n1 <- normalizeExpr ptr s1
-                   n2 <- normalizeExpr idx s2
-                   return $ n1 ++ n2 ++ [Declare var S32Int $ Load (GetVar s1) (GetVar s2)]
+                   return [Declare var t $ GetVar t v]
+            Load t ptr idx ->
+                do (n1, v1) <- assignNewVar ptr
+                   (n2, v2) <- assignNewVar idx
+                   return $ n1 ++ n2 ++ [Declare var t $ Load t v1 v2]
 
-      normalizeSentence :: Sentence -> State Int [Sentence]
+
+      assignNewVar expr = do s <- genSym
+                             n <- normalizeExpr expr s
+                             return (n, GetVar (typeOf expr) s)
+
+      normalizeSentence :: Sentence Type -> State Int [Sentence Type]
       normalizeSentence sentence =
           case sentence of
             Assign var expr -> normalizeExpr expr var
             If cnd csq alt  ->
                 do s <- genSym
-                   n1 <- normalizeExpr cnd s
+                   (n1, v1) <- assignNewVar cnd
                    a1 <- normalize' csq
                    a2 <- normalize' alt
-                   return $ n1 ++ [If (GetVar s) a1 a2]
+                   return $ n1 ++ [If v1 a1 a2]
             While cnd body ->
                 do s <- genSym
-                   n <- normalizeExpr cnd s
+                   (n, v) <- assignNewVar cnd
                    a <- normalize' body
-                   return $ n ++ [While (GetVar s) a]
+                   return $ n ++ [While v a]
             Declare var t expr -> normalizeExpr expr var
             Store dat idx val ->
-                do s1 <- genSym
-                   s2 <- genSym
-                   s3 <- genSym
-                   n1 <- normalizeExpr dat s1
-                   n2 <- normalizeExpr idx s2
-                   n3 <- normalizeExpr val s3
-                   return $ n1 ++ n2 ++ n3 ++ [Store (GetVar s1) (GetVar s2) (GetVar s3)]
+                do (n1, v1) <- assignNewVar dat
+                   (n2, v2) <- assignNewVar idx
+                   (n3, v3) <- assignNewVar val
+                   return $ n1 ++ n2 ++ n3 ++ [Store v1 v2 v3]
             Call name exprs ->
                 do ss <- mapM (\_ -> genSym) exprs
                    ns <- sequence $ zipWith normalizeExpr exprs ss
-                   return $ concat ns ++ [Call name (map GetVar ss)]
+                   return $ concat ns ++ [Call name (map (GetVar S32Int) ss)]
             Data var ws -> return [Data var ws]
             DebugStop -> return [DebugStop]
 
-{-                         
+-}                         
+
+
+{-
 compile :: AST -> Program
 compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
     where
-      compAST :: AST -> State CompileState [Inst]
-      compAST (AST ss) = concat `fmap` mapM compSentence ss
+      compAST :: AST Type -> State CompileState [Inst]
+      compAST (AST ss) = concat <$> mapM compSentence ss
 
-      compSentence :: Sentence -> State CompileState [Inst]
-      compSentence (DeclInt var) = defineVar var >> return []
-      compSentence (DeclPtr ptr) = definePtr ptr >> return []
+      compSentence :: Sentence Type -> State CompileState [Inst]
+      compSentence (Declare var S32Int (GetVar _ val)) =
+          do defineVar var
+             r <- lookupVar var
+             v <- lookupVar val
+             return [OR spec32 var val val]
 
-      compSentence (PCopy p0 p1) = do preg0 <- lookupPtr p0
-                                      preg1 <- lookupPtr p1
-                                      return $ [PCP preg0 preg1]
+      compSentence (Declare var (Pointer _) (GetVar _ val)) =
+          do definePtr var
+             p <- lookupPtr var
+             v <- lookupPtr val
+             return [PCP p v]
 
-      compSentence (Store p ix expr) = do ptr <- lookupPtr p
-                                          c1 <- compExprTo expr tmp1
-                                          c2 <- compIntValTo ix tmp2
+      compSentence (Store (GetVar (Pointer S32Int) ptr) (GetVar _ ix) (GetVar S32Int val)) =
+          do p <- lookupPtr ptr
+             i <- lookupVar ix
+             v <- lookupVar val
+             return [PADD spec32 p3e p i, SMEM0 spec32 v p3e]
 
-                                          return $ c1 ++ c2 ++ [PADD spec32 p3e ptr tmp2,
-                                                                SMEM0 spec32 tmp1 p3e]
+      compSentence (Data ptrvar ws) =
+          do definePtr ptrvar
+             p <- lookupPtr ptrvar
+             lbl <- genLabel
+             return $ [PLIMM p lbl, LB readWrite lbl, DATA ws]
 
-      compSentence (Data ptrvar ws) = do definePtr ptrvar
-                                         pReg <- lookupPtr ptrvar
-                                         lbl <- genLabel
-                                         return $ [PLIMM pReg lbl, LB readWrite lbl, DATA ws]
+      compSentence (Assign var (GetVar typ val)) =
+          case typ of
+            S32Int    -> do r <- lookupVar var
+                            v <- lookupVar val
+                            [OR spec32 var val val]                            
+            Pointer _ -> do p <- lookupPtr var
+                            v <- lookupPtr val
+                            [PCP var val]
 
-      compSentence (Assign var expr) = do dst <- lookupVar var
-                                          compExprTo expr dst
-
-      compSentence (If cond cnsq altn) =
-          do c1 <- compExprTo cond tmp1
-             c2 <- extendScope (compAST cnsq)
-             c3 <- extendScope (compAST altn)
+      compSentence (If (GetVar _ cond) cnsq altn) =
+          do c1 <- extendScope (compAST cnsq)
+             c2 <- extendScope (compAST altn)
 
              ifLabel <- genLabel
              endLabel  <- genLabel
 
-             return $ c1 ++ [LIMM spec32 tmp2 (Imm 1), XOR spec32 tmp1 tmp1 tmp2,
-                             CND tmp1, PLIMM p3f ifLabel] ++
-                        c2 ++ [PLIMM p3f endLabel, LB jumpOnly ifLabel] ++
-                        c3 ++ [LB jumpOnly endLabel]
+             return $ [LIMM spec32 tmp2 (Imm 1),
+                       XOR spec32 tmp1 cond tmp2,
+                       CND tmp1] ++ 
+                        c1 ++ [PLIMM p3f endLabel, LB jumpOnly ifLabel] ++
+                        c2 ++ [LB jumpOnly endLabel]
 
       compSentence (While cond body) =
-          do c1 <- compExprTo cond tmp1
-             c2 <- extendScope (compAST body)
+          do c <- extendScope (compAST body)
 
              startLabel <- genLabel
              endLabel <- genLabel
@@ -187,7 +197,7 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
              return $ [LB jumpOnly startLabel] ++ c1 ++
                         [LIMM spec32 tmp2 (Imm 1), XOR spec32 tmp1 tmp1 tmp2,
                          CND tmp1, PLIMM p3f endLabel] ++
-                          c2 ++ [PLIMM p3f startLabel, LB jumpOnly endLabel]
+                          c ++ [PLIMM p3f startLabel, LB jumpOnly endLabel]
 
       compSentence (Call func args) =
           case lookup func apiList of
@@ -202,13 +212,13 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
       compSentence (Break) = return [BREAK]
 
 
+-}
+apiList = [("api_drawPoint", (Imm 0x0002, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34])),
+           ("api_sleep",     (Imm 0x0009, [Reg 0x31, Reg 0x32])),
+           ("api_openWin",   (Imm 0x0010, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34])),
+           ("api_fillOval",  (Imm 0x0005, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34, Reg 0x35, Reg 0x36]))]
 
-      apiList = [("api_drawPoint", (Imm 0x0002, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34])),
-                 ("api_sleep",     (Imm 0x0009, [Reg 0x31, Reg 0x32])),
-                 ("api_openWin",   (Imm 0x0010, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34])),
-                 ("api_fillOval",  (Imm 0x0005, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34, Reg 0x35, Reg 0x36]))]
-
-
+{-
       -- exprを、指定されたレジスタに計算していれる命令列を出す。
       compExprTo :: Expr -> Reg -> State CompileState [Inst]
       compExprTo (Expr v1)   outR = compIntValTo v1 outR
@@ -251,55 +261,177 @@ compile ast = Program $ evalState (compAST ast) (CS 0 emptyFrame)
       compIntValTo (GetVar v) reg = do varReg <- lookupVar v
                                        return [OR spec32 reg varReg varReg]
 
-      
-      -- スコープのネストした中でモナドを走らせる．要は，いったん戻してるだけ．
-      extendScope :: State CompileState a -> State CompileState a
-      extendScope m = do
-        fr <- use frame
-        ret <- m
-        frame .= fr
-        return ret
-
-      -- 整数の変数を，シンボルテーブルから引っ張ってくる．
-      lookupVar :: IntVar -> State CompileState Reg
-      lookupVar var@(IntVar s) = do
-        vars <- use (frame.intVars)
-        case lookup var vars of
-          Nothing -> error $ "undefined variable: " ++ s
-          Just rg -> return rg
-
-      -- ポインタ変数を，シンボルテーブルから引っ張ってくる．
-      lookupPtr :: PtrVar -> State CompileState PReg
-      lookupPtr ptr@(PtrVar s) = do
-        vars <- use (frame.ptrVars)
-        case lookup ptr vars of
-          Nothing -> error $ "undefined pointer variable: " ++ s
-          Just pr -> return pr
-
-      defineVar var@(IntVar _) = do
-        reg <- use (frame.intVars) <&> genericLength <&> Reg
-        frame.intVars %= ((var, reg) :)
-        return $ reg
-
-      definePtr ptr@(PtrVar _) = do
-        reg <- use (frame.ptrVars) <&> genericLength <&> PReg
-        frame.ptrVars %= ((ptr, reg) :)
-        return $ reg
-
-      genLabel = do
-        lb <- use labels
-        labels += 1
-        return $ Label lb
-
 -}
 
+-- スコープのネストした中でモナドを走らせる．要は，いったん戻してるだけ．
+extendScope :: State CompileState a -> State CompileState a
+extendScope m = do
+  fr <- use frame
+  ret <- m
+  frame .= fr
+  return ret
 
+-- 整数の変数を，シンボルテーブルから引っ張ってくる．
+lookupVar :: Var -> State CompileState Reg
+lookupVar var@(Var s) = do
+  vars <- use (frame.intVars)
+  case lookup var vars of
+    Nothing -> error $ "undefined variable: " ++ s
+    Just rg -> return rg
+
+-- ポインタ変数を，シンボルテーブルから引っ張ってくる．
+lookupPtr :: Var -> State CompileState PReg
+lookupPtr ptr@(Var s) = do
+  vars <- use (frame.ptrVars)
+  case lookup ptr vars of
+    Nothing -> error $ "undefined pointer variable: " ++ s
+    Just pr -> return pr
+
+defineVar var@(Var _) = do
+  reg <- use (frame.intVars) <&> genericLength <&> Reg
+  frame.intVars %= ((var, reg) :)
+  return $ reg
+
+definePtr ptr@(Var _) = do
+  reg <- use (frame.ptrVars) <&> genericLength <&> PReg
+  frame.ptrVars %= ((ptr, reg) :)
+  return $ reg
+
+genLabel :: State CompileState Label
+genLabel = do
+  lb <- use labels
+  labels += 1
+  return $ Label lb
+
+arith And = AND
+arith Xor = XOR
+arith Or  = OR
+arith Add = ADD
+arith Mul = MUL
+
+comp  Cmpe = CMPE
+comp  Cmpne = CMPNE
+comp  Cmpl = CMPL
+comp  Cmple = CMPLE
+comp  Cmpg = CMPG
+comp  Cmpge = CMPGE
+
+compile :: [IR.IR] -> Program
+compile is = Program $ evalState (compile' is) (CS 0 emptyFrame)
+    where
+      compile' :: [IR.IR] -> State CompileState [Inst]
+      compile' irs = concat <$> mapM compileIR irs
+          
+      compileIR :: IR.IR -> State CompileState [Inst]
+      compileIR ir =
+          case ir of
+            IR.If var csq alt ->
+                do cond <- lookupVar var
+                   c1 <- extendScope (compile' csq)
+                   c2 <- extendScope (compile' alt)
+                  
+                   ifLabel <- genLabel
+                   endLabel <- genLabel
+
+                   return $ [LIMM spec32 tmp2 (Imm 1),
+                             XOR  spec32 tmp1 cond tmp2,
+                             CND tmp1] ++
+                              c1 ++ [PLIMM p3f endLabel, LB jumpOnly ifLabel] ++
+                              c2 ++ [LB jumpOnly endLabel]
+            IR.While var cond body ->
+                do cv <- lookupVar var
+                   c1 <- compile' cond
+                   c2 <- extendScope (compile' body)
+                   startLabel <- genLabel
+                   endLabel <- genLabel
+                   return $ [LB jumpOnly startLabel] ++ c1 ++
+                            [LIMM spec32 tmp2 (Imm 1), XOR spec32 tmp1 cv tmp2,
+                             CND tmp1, PLIMM p3f endLabel] ++
+                             c2 ++ [PLIMM p3f startLabel, LB jumpOnly endLabel]
+
+            IR.Declare var S32Int val ->
+                do defineVar var
+                   r <- lookupVar var
+                   v <- lookupVar val
+                   return [OR spec32 r v v]
+            IR.Declare var (Pointer _) val ->
+                do definePtr var
+                   p <- lookupPtr var
+                   v <- lookupPtr val
+                   return [PCP p v]
+            IR.Arith op var e1 e2 ->
+                do defineVar var
+                   r  <- lookupVar var
+                   v1 <- lookupVar e1
+                   v2 <- lookupVar e2
+                   return [arith op spec32 r v1 v2]
+
+            IR.Comp op var e1 e2 ->
+                do defineVar var
+                   r  <- lookupVar var
+                   v1 <- lookupVar e1
+                   v2 <- lookupVar e2
+                   return [comp op spec32 spec32  r v1 v2]
+            IR.ConstS32Int var int ->
+                do defineVar var
+                   r <- lookupVar var
+                   return [LIMM spec32 r (Imm (fromInteger (toInteger int)))]
+            IR.GetVar var S32Int val ->
+                do defineVar var
+                   r <- lookupVar var
+                   v <- lookupVar val
+                   return [OR spec32 r v v]
+            IR.GetVar var (Pointer _) val ->
+                do definePtr var
+                   p <- lookupPtr var
+                   v <- lookupPtr val
+                   return [PCP p v]
+
+            IR.Load var ptr idx ->
+                do defineVar var
+                   v <- lookupVar var
+                   p <- lookupPtr ptr
+                   i <- lookupVar idx
+                   return [PADD spec32 p3e p i, LMEM0 spec32 v p3e]
+            IR.Store ptr idx val ->
+                do p <- lookupPtr ptr
+                   i <- lookupVar idx
+                   v <- lookupVar val
+                   return [PADD spec32 p3e p i, SMEM0 spec32 v p3e]
+            IR.Call name vars ->
+                case lookup name apiList of
+                  Nothing -> error $ "function not found: " ++ name
+                  Just (inst, regs) -> do  
+                    args <- mapM lookupVar vars
+                    let move = zipWith (\d s -> OR spec32 d s s) regs args
+                    lb <- genLabel
+                    return $ move ++ [LIMM spec32 (Reg 0x30) inst,
+                                      PLIMM p30 lb,
+                                      PCP p3f p2f,
+                                      LB readWrite lb]
+            IR.Data name dat ->
+                do definePtr name
+                   p <- lookupPtr name
+                   lb <- genLabel
+                   return $ [PLIMM p lb, LB readWrite lb, DATA dat]
+            IR.DebugStop -> return [BREAK]
 test1 = AST [
-         Declare (Var "x") S32Int (Arith Add
-                                   (Arith Xor (ConstS32Int 3) (ConstS32Int 4))
-                                   (ConstS32Int 5))]
+         Declare (Var "x") S32Int (Arith () Add
+                                   (Arith () Xor (ConstS32Int () 3) (ConstS32Int () 4))
+                                   (ConstS32Int () 5))]
 test2 = AST [
-         Data  (Var "d") [1, 2, 3],
-         Declare (Var "y") S32Int (Load (GetVar (Var "d")) (ConstS32Int 1)),
-         Store (GetVar (Var "d")) (ConstS32Int 3) (ConstS32Int 4)
+         Data    (Var "d") [1, 2, 3],
+         Declare (Var "y") S32Int (Load () (GetVar () (Var "d")) (ConstS32Int () 1)),
+         Store (GetVar () (Var "d")) (ConstS32Int () 3) (ConstS32Int () 4)
         ]
+
+test3 = AST [
+         Data (Var "d") [1, 2, 3],
+         Declare (Var "y") (Pointer S32Int) (GetVar () (Var "d"))
+        ]
+test4 = AST [
+         Declare (Var "i") S32Int (ConstS32Int () 0),
+         While (GetVar () (Var "i")) (AST [])
+        ]
+
+process = compile . IR.normalize . typing

@@ -15,72 +15,91 @@ import AST
 type TypeEnv = [(Var, Type)]
 type TypingM = StateT TypeEnv (Either String)
 
-typing :: AST -> AST
+typing :: AST () -> AST Type
 typing ast = case evalStateT (typing' ast) [] of
-               Right ()   -> ast
+               Right ast' -> ast'
                Left  err' -> error err'
                
 
-typing' :: AST -> TypingM ()
-typing' (AST sentences) = forM_ sentences typingSentence
+typing' :: AST t -> TypingM (AST Type)
+typing' (AST sentences) = AST <$> mapM typingSentence sentences
     where
-      typingSentence :: Sentence -> TypingM ()
+      typingSentence :: Sentence t -> TypingM (Sentence Type)
       typingSentence sentence = 
           case sentence of
             Assign var expr -> do t1 <- typeLookup var
-                                  t2 <- typeOf expr
-                                  typeAssert t1 t2
-            If cond csq alt -> do t1 <- typeOf cond
-                                  typeAssert S32Int t1
-                                  typing' csq
-                                  typing' alt
-            While cond body -> do t1 <- typeOf cond
-                                  typeAssert S32Int t1
-                                  typing' body
-            Declare v t ini -> do t1 <- typeOf ini
-                                  typeAssert t t1
+                                  e2 <- typingExpr expr
+                                  typeAssert t1 (typeOf e2)
+                                  return $ Assign var e2
+            If cond csq alt -> do e1 <- typingExpr cond
+                                  typeAssert S32Int (typeOf e1)
+                                  a1 <- typing' csq
+                                  a2 <- typing' alt
+                                  return $ If e1 a1 a2
+            While cond body -> do e1 <- typingExpr cond
+                                  typeAssert S32Int (typeOf e1)
+                                  a1 <- typing' body
+                                  return $ While e1 a1
+            Declare v t ini -> do e1 <- typingExpr ini
+                                  typeAssert t (typeOf e1)
                                   putVar v t
-
-            Store dat idx v -> do t1 <- typeOf dat
-                                  t2 <- typeOf idx
-                                  t3 <- typeOf v
-                                  case (t1, t2, t3) of
-                                    (Pointer t, S32Int, s) | s == t -> return ()
+                                  return $ Declare v t e1
+            Store dat idx v -> do e1 <- typingExpr dat
+                                  e2 <- typingExpr idx
+                                  e3 <- typingExpr v
+                                  case (typeOf e1, typeOf e2, typeOf e3) of
+                                    (Pointer t, S32Int, s) | s == t -> return $ Store e1 e2 e3
                                     otherwise -> lift (throwError "store mismatch")
-            Call name exprs -> forM_ exprs $ \e -> do
-                                 t1 <- typeOf e
-                                 typeAssert S32Int t1
-            Data v _  -> putVar v (Pointer S32Int)
-            DebugStop -> return ()
+            Call name exprs -> do args <- forM exprs $ \e -> do
+                                            e' <- typingExpr e
+                                            typeAssert S32Int (typeOf e')
+                                            return e'
+                                  return $ Call name args
+            Data v d  -> do putVar v (Pointer S32Int)
+                            return $ Data v d
+            DebugStop -> return DebugStop
+
 
 putVar :: Var -> Type -> TypingM ()
 putVar v t = modify ((v, t):)
+             
 typeLookup :: Var -> TypingM Type
 typeLookup var = do st <- get
                     case lookup var st of
                       Just x  -> return x
                       Nothing -> throwError ("var not found in type checking" ++ show var)
                                          
-typeOf :: Expr -> TypingM Type
-typeOf expr = case expr of
-                Arith _ e1 e2 -> do t1 <- typeOf e1
-                                    t2 <- typeOf e2
-                                    case (t1, t2) of
-                                      (S32Int, S32Int) -> return S32Int
-                                      otherwise -> lift (throwError "arithmetic operand error")
-                Comp  _ e1 e2 -> do t1 <- typeOf e1
-                                    t2 <- typeOf e2
-                                    case (t1, t2) of
-                                      (S32Int, S32Int) -> return S32Int
-                                      otherwise -> lift (throwError "comparison operand error")
-                Load dat idx  -> do t1 <- typeOf dat
-                                    t2 <- typeOf idx
-                                    case (t1, t2) of
-                                      (Pointer x, y) | x == y -> return x
-                                      otherwise -> lift (throwError "indexing operation error")
-                ConstS32Int int -> return S32Int
-                GetVar var -> typeLookup var
-                                              
+typingExpr :: Expr t -> TypingM (Expr Type)
+typingExpr expr =
+    case expr of
+      Arith _ o e1 e2 -> do t1 <- typingExpr e1
+                            t2 <- typingExpr e2
+                            case (typeOf t1, typeOf t2) of
+                              (S32Int, S32Int) -> return $ Arith S32Int o t1 t2
+                              otherwise -> lift (throwError "arithmetic operand error")
+      Comp _ o e1 e2 -> do t1 <- typingExpr e1
+                           t2 <- typingExpr e2
+                           case (typeOf t1, typeOf t2) of
+                             (S32Int, S32Int) -> return $ Comp S32Int o t1 t2
+                             otherwise -> lift (throwError "comparison operand error")
+      Load _ dat idx  -> do t1 <- typingExpr dat
+                            t2 <- typingExpr idx
+                            case (typeOf t1, typeOf t2) of
+                              (Pointer x, y) | x == y -> return $ Load y t1 t2
+                              otherwise -> lift (throwError "indexing operation error")
+      ConstS32Int _ int -> return $ ConstS32Int S32Int int
+      GetVar _ var -> do t <- typeLookup var
+                         return $ GetVar t var
+
+
+typeOf expr =
+    case expr of
+      Arith t _ _ _ -> t
+      Comp  t _ _ _ -> t
+      ConstS32Int t _ -> t
+      GetVar t _      -> t
+      Load t _ _ -> t
+                   
 typeAssert :: Type -> Type -> TypingM ()
 typeAssert t1 t2 | t1 /= t2  = lift (throwError ("type mismatch: " ++ show t1 ++ " != " ++ show t2))
                  | otherwise = return ()
@@ -88,8 +107,8 @@ typeAssert t1 t2 | t1 /= t2  = lift (throwError ("type mismatch: " ++ show t1 ++
 
 
 testAST1 = AST [
-           Declare (Var "x") S32Int (ConstS32Int 0),
+           Declare (Var "x") S32Int (ConstS32Int () 0),
            Data (Var "y") [1, 2, 3],
-           While (Comp Cmpe (GetVar (Var "x")) (GetVar (Var "y"))) (AST [DebugStop])
+           While (Load () (GetVar () (Var "y")) (GetVar () (Var "x"))) (AST [DebugStop])
            
            ]

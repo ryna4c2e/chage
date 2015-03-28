@@ -29,11 +29,11 @@ data CompOperator = Cmpe
                   | Cmpge
                     deriving (Show, Eq)
 -- 式．
-data Expr t = Arith t ArithOperator Expr Expr -- $1 op   $2
-            | Comp  t CompOperator  Expr Expr -- $1 comp $2
+data Expr t = Arith t ArithOperator (Expr t) (Expr t) -- $1 op   $2
+            | Comp  t CompOperator  (Expr t) (Expr t) -- $1 comp $2
             | ConstS32Int t Int
             | GetVar t Var
-            | Load t Expr Expr -- get value of $1[$2]
+            | Load t (Expr t) (Expr t) -- get value of $1[$2]
             deriving (Show, Eq)
 
 -- とりあえず，ASTは文の連続とする．
@@ -43,7 +43,7 @@ instance Show t => Show (AST t) where
     show (AST stmts) = unlines $ map show stmts
     
 -- 文．
-data Sentence t = Assign  Var  (Expr t)
+data Sentence t = Assign  Var (Expr t)
                 | If      (Expr t) (AST t) (AST t)
                 | While   (Expr t) (AST t)
                 | Declare Var Type (Expr t)
