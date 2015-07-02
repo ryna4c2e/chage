@@ -11,7 +11,7 @@
 module ChageComp where
 
 import Data.Word
-import Data.List (genericLength)
+import Data.List (genericLength, tails)
 import Control.Monad.State
 import Control.Monad
 
@@ -27,13 +27,15 @@ import qualified IR
 -- 変数とレジスタの割当関係を管理する．
 data Frame = Frame { _intVars :: [(Var, Reg)]
                    , _ptrVars :: [(Var, PReg)]
+                   , _intRest :: [Reg]
+                   , _ptrRest :: [PReg]
                    }
 
 makeLenses ''Frame
 
 
 emptyFrame :: Frame
-emptyFrame = Frame [] []
+emptyFrame = Frame [] [] [Reg 0 .. Reg 0x27] [PReg 0 .. PReg 0x27]
 
 
 -- コンパイル中に保持しておくべき情報．内部的に用いられるのみである．
@@ -63,10 +65,14 @@ p2f = PReg 0x2F
 jumpOnly  = LabelOpt 0
 readWrite = LabelOpt 1
 
-apiList = [("api_drawPoint", (Imm 0x0002, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34])),
-           ("api_sleep",     (Imm 0x0009, [Reg 0x31, Reg 0x32])),
-           ("api_openWin",   (Imm 0x0010, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34])),
-           ("api_fillOval",  (Imm 0x0005, [Reg 0x31, Reg 0x32, Reg 0x33, Reg 0x34, Reg 0x35, Reg 0x36]))]
+apiList = [("api_drawPoint", (Imm 0x0002, [Reg 0x31 .. Reg 0x34])),
+           ("api_drawLine",  (Imm 0x0003, [Reg 0x31 .. Reg 0x36])),
+           ("api_drawRect",  (Imm 0x0004, [Reg 0x31 .. Reg 0x36])),
+           ("api_drawOval",  (Imm 0x0005, [Reg 0x31 .. Reg 0x36])),
+           ("api_exit",      (Imm 0x0008, [Reg 0x31 .. Reg 0x31])),
+           ("api_sleep",     (Imm 0x0009, [Reg 0x31 .. Reg 0x32])),
+           ("api_openWin",   (Imm 0x0010, [Reg 0x31 .. Reg 0x34]))
+          ]
 
 
 -- スコープのネストした中でモナドを走らせる．要は，いったん戻してるだけ．
@@ -108,18 +114,23 @@ alreadyDefinedPtr v = do
                
 defineVar var@(Var v) = do
   defd <- alreadyDefinedVar var
-  when defd (error $ "already defined" ++ v)
-  reg <- use (frame.intVars) <&> genericLength <&> Reg
+  when defd (error $ "already defined var: " ++ v)
+  reg <- use (frame.intRest) <&> head
   frame.intVars %= ((var, reg) :)
+  frame.intRest %= tail
   return $ reg
 
 definePtr ptr@(Var v) = do
   defd <- alreadyDefinedPtr ptr
-  when defd (error $ "already defined" ++ v)
-  reg <- use (frame.ptrVars) <&> genericLength <&> PReg
+  when defd (error $ "already defined ptr: " ++ v)
+  reg <- use (frame.ptrRest) <&> head
   frame.ptrVars %= ((ptr, reg) :)
+  frame.ptrRest %= tail
   return $ reg
 
+-- releaseVar var@(Var v) = do
+--  frame.intVars %= filter ((v ==) . fst)
+  
 genLabel :: State CompileState Label
 genLabel = do
   lb <- use labels
@@ -143,10 +154,10 @@ compile :: [IR.IR] -> Program
 compile is = Program $ evalState (compile' is) (CS 0 emptyFrame)
     where
       compile' :: [IR.IR] -> State CompileState [Inst]
-      compile' irs = concat <$> mapM compileIR irs
+      compile' irs = concat <$> zipWithM compileIR irs (map concat $ tails $ map IR.varRefs irs)
           
-      compileIR :: IR.IR -> State CompileState [Inst]
-      compileIR ir =
+      compileIR :: IR.IR -> [Var] -> State CompileState [Inst]
+      compileIR ir livingVars =
           case ir of
             IR.If var csq alt ->
                 do cond <- lookupVar var
@@ -236,6 +247,7 @@ compile is = Program $ evalState (compile' is) (CS 0 emptyFrame)
                    lb <- genLabel
                    return $ [PLIMM p lb, LB readWrite lb, DATA dat]
             IR.DebugStop -> return [BREAK]
+--         <* mapM_ (\v -> unless (v `elem` livingVars) re) IR.varRefs ir
 test1 = AST [
          Declare (Var "x") S32Int (Arith () Add
                                    (Arith () Xor (ConstS32Int () 3) (ConstS32Int () 4))

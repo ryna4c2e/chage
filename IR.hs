@@ -79,3 +79,20 @@ normalize ast = evalState (normalize' ast) 0
       assignToNewVar expr = do s <- genSym
                                n <- normalizeExpr expr s
                                return (s, n)
+
+varRefs :: IR -> [A.Var]
+varRefs ir =
+    case ir of
+      If v irs1 irs2 -> [v] ++ concatMap varRefs irs1 ++ concatMap varRefs irs2
+      While v irs1 irs2 -> [v] ++ concatMap varRefs irs1 ++ concatMap varRefs irs2
+      Declare v1 _ v2 -> [v1, v2]
+      Arith _ v1 v2 v3 -> [v1, v2, v3]
+      Comp _ v1 v2 v3 -> [v1, v2, v3]
+      ConstS32Int v1 _ -> [v1]
+      Assign v1 _ v2 -> [v1, v2]
+      Load v1 v2 v3 -> [v1, v2, v3]
+      Store v1 v2 v3 -> [v1, v2, v3]
+      Call _ vs -> vs
+      Data v _ -> [v]
+      _ -> []
+           

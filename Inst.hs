@@ -1,10 +1,11 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Inst where
 
 import Numeric
 import Data.Word
 
-newtype Reg     = Reg Word32 deriving (Eq)
-newtype PReg    = PReg Word32 deriving (Eq)
+newtype Reg     = Reg Word32 deriving (Eq, Enum)
+newtype PReg    = PReg Word32 deriving (Eq, Enum)
 newtype BitSpec = BitSpec Word32 deriving (Eq)
 newtype Imm     = Imm Word32 deriving (Eq)
 newtype Label   = Label Word32 deriving (Eq)

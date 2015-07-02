@@ -1,0 +1,18 @@
+var v: int = 3;
+var x: int = 30;
+
+while 1 {
+  if x <= 50 {
+    v = 3;
+  }
+  if x >= 300 {
+    v = -3;
+  }
+
+  x = x + v;
+
+  api_drawOval(0, 0, 40, 40, x+ -10, 190);
+  api_drawOval(0, 7, 20, 20, x, 200);
+  api_sleep(0, 30);
+}
+
