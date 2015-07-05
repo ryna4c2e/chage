@@ -1,0 +1,7 @@
+var x: int = 0;
+
+while x != 640 {
+  api_drawLine(0x08, 3, x,   0,   0, 479);
+  api_drawLine(0x08, 3, x, 479, 639,   0);
+  x = x + 1;
+}

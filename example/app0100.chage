@@ -1,0 +1,18 @@
+var c: int = 0;
+var x: int = 0;
+var y: int = 0;
+
+api_openWin(0, 0, 256, 256);
+
+while x < 256 {
+  y = 0;
+  
+  while y < 256 {
+    api_drawPoint(3, c, x, y);
+    c = c + 0x100;
+    y = y + 1;
+  }
+
+  x = x + 1;
+}
+
