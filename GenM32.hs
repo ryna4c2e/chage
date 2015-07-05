@@ -141,4 +141,4 @@ toBinary :: [Word32] -> Builder
 toBinary w32s = mconcat (map word8 osecpuSignatureM32 ++ map word32BE w32s)
 
 hAssembleOut :: Handle -> Program -> IO ()
-hAssembleOut h p = hPutBuilder h (toBinary (assemble p)) >> print p
+hAssembleOut h p = hPutBuilder h (toBinary (assemble p))
