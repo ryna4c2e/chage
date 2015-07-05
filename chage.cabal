@@ -2,7 +2,7 @@
 --  see http://haskell.org/cabal/users-guide/
 
 name:                chage
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            A simple language designed for OSECPU-VM.
 -- description:         
 -- license:             

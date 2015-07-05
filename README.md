@@ -1,15 +1,20 @@
 # CHAGE
 A simple language designed for [OSECPU-VM](http://osecpu.osask.jp/wiki/).
 
+# 謝辞
+このプロジェクトのサンプルプログラムとして、[OSECPU-VM](http://osecpu.osask.jp/wiki/)に含まれるアプリケーションを一部参考にして、
+chageで書き直したものを含んでいます。
+
 # ビルドと実行
-1. [Haskell Platform](https://www.haskell.org/platform/)をインストールします．
-2. `cabal build`でとりあえず，`dist/build/chage/chage` に実行ファイルができます（よくわかっていない）
-3. `chage input.chag` を実行すると，`out.b32`という[b32形式](http://osecpu.osask.jp/wiki/?page0097) のOSECPU-VMバイナリが生成されます．
+事前に、[Haskell Platform](https://www.haskell.org/platform/)と、[OSECPU-VM](http://osecpu.osask.jp/wiki/)の最新版を用意してください。
+
+1. `cabal build`で，`dist/build/chage/chage` に実行ファイルができます。
+1. `chage input.chage` を実行すると，`out.b32`という[b32形式](http://osecpu.osask.jp/wiki/?page0097) のOSECPU-VMバイナリが生成されます．
 
 # 文法
 ## 基本
 一つのファイルに，上から順番に文を書くと実行されます．
-拡張子は.chagでお願いします．
+拡張子は.chageでお願いします．
 サンプルコードを示すので，悟って下さい．
 あと，文法はだいたい[Rust](http://www.rust-lang.org)のパクリです．だいたいみんな同じようなことを考えるということで...
 大体の文法は，サンプルコードを用意したので以下を参照ください．
@@ -19,10 +24,10 @@ A simple language designed for [OSECPU-VM](http://osecpu.osask.jp/wiki/).
 ```rust
 // コメントはこんな感じで書けます．
 // 変数宣言です．1行ずつ書いて下さい．
-int i;
-int x;
-int y;
-int c;
+var i: int = 0;
+var x: int = 0;
+var y: int = 0;
+var c: int = 0;
 
 // 代入はこんな感じで．
 c = 0;
@@ -67,5 +72,4 @@ while y < 256 {
 
   y = y + 1;
 }
-
 ```
