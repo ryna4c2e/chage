@@ -106,6 +106,7 @@ alreadyDefinedVar v = do
     Nothing -> False
     Just _  -> True
 
+alreadyDefinedPtr :: Var -> State CompileState Bool                      
 alreadyDefinedPtr v = do
   vars <- use (frame.ptrVars)
   return $ case lookup v vars of
