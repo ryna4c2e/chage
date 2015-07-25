@@ -1,6 +1,6 @@
 -- 肩検査のモジュール
 
-module Typing where
+module Typing (typing, typeOf) where
 
 import Control.Applicative    
 import Control.Monad
@@ -59,8 +59,6 @@ typing' (AST sentences) = AST <$> mapM typingSentence sentences
                             return $ Data v d
             DebugStop -> return DebugStop
 
-
-putVar :: Var -> Type -> TypingM ()
 putVar v t = modify ((v, t):)
              
 typeLookup :: Var -> TypingM Type

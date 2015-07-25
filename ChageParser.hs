@@ -2,17 +2,19 @@ module ChageParser where
 
 
 import Control.Applicative hiding (many, (<|>), Const)
+
 import Data.Maybe
 import Data.Word
 
 import Text.Parsec
+import Text.Parsec.Expr
+import Text.Parsec.Language
 import Text.Parsec.String
 import Text.Parsec.Token
-import Text.Parsec.Language
-import Text.Parsec.Expr
 
 import Type
 import AST
+
 
 -- ＿人人人人人人人＿
 -- ＞　chageStyle　＜
@@ -21,7 +23,7 @@ chageStyle = javaStyle {
                opStart = oneOf "!&*+./<=>?@\\^|-~{}",
                opLetter = oneOf "!&*+./<=>?@\\^|-~",
                reservedNames = ["if", "while", "int", "else", "var"],
-               reservedOpNames = ["+", "-", "*", "<<", ">>", "&", "|", "^", "==", "!=", ">=", "<=", ">", "<", ":=", "$"]
+               reservedOpNames = ["+", "-", "*", "/", "<<", ">>", "&", "|", "^", "==", "!=", ">=", "<=", ">", "<", ":=", "$"]
              }
 
 
@@ -106,9 +108,6 @@ parseDeclare   = do reserved tok "var"
                     semi tok
                     return $ Declare var typ initial
                     
---parseDeclInt   = Declare <$  reserved tok "int" <*> parseIntVar <* semi tok
---parseDeclPtr   = Declare <$  reserved tok "ptr" <*> parsePtrVar <* semi tok
-
                  
 parseStore     = Store   <$  reservedOp tok "$"
                          <*> (parseExpr)

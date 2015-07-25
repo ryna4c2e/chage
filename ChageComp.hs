@@ -151,6 +151,8 @@ comp  Cmple = CMPLE
 comp  Cmpg = CMPG
 comp  Cmpge = CMPGE
 
+
+
 compile :: [IR.IR] -> Program
 compile is = Program $ evalState (compile' is) (CS 0 emptyFrame)
     where
@@ -274,3 +276,5 @@ test5 = AST [
         ]
 
 process = compile . IR.normalize . typing
+
+hoge = process
